@@ -1,8 +1,10 @@
 import torch, json, os, sys
+from pathlib import Path
+sys.path.append(Path(__file__).parent)
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from typing import List, Tuple
 import pandas as pd
-from pathlib import Path
+from dataset import WikipediaDataset
 
 class LlamaModelForProbing(torch.nn.Module):
     def __init__(self, tokenizer: AutoTokenizer, device: torch.device):
@@ -37,8 +39,9 @@ class LlamaModelForProbing(torch.nn.Module):
         
         self.neuron_output_list = [] # List[L x (b, T, 4d)]
         self.register_hook()
+        self.model.eval()
         prediction_output = self.model(input_ids=input_ids, 
-                                        attention_mask=attention_mask).logits.cpu() # (b, T, d)
+                                       attention_mask=attention_mask).logits.cpu() # (b, T, d)
         self.remove_hook()
         
         neuron_output = torch.stack(self.neuron_output_list, dim=0) # (L, b, T, 4d)
@@ -48,6 +51,7 @@ class LlamaModelForProbing(torch.nn.Module):
         gt_zero_count = gt_zero_count.sum(dim=(0, 1)).cpu() # (L, 4d) 
             
         return {"logits": prediction_output, # (b, T, d)
+                "tokens_count": prediction_output.shape[0] * prediction_output.shape[1], # scalar: b*T
                 "avg_neuron_out": avg_neuron_output, # (L, 4d)
                 "neuron_out_gt_zero_count": gt_zero_count # (L, 4d)
         } 
@@ -59,13 +63,15 @@ def main(model_name: str, device: torch.device) -> None:
     else:
         raise NotImplementedError("Invalid model name!")
     
-    input_dict = tokenizer(["I love machine learning"], return_tensors="pt")
+    ds = WikipediaDataset(tokenizer=tokenizer, lang="en", max_context_len=512)
+    dl = ds.prepare_dataloader(batch_size=8)
+    input_dict = next(iter(dl))
     print(model)
     out = model(**input_dict)
     print(out)      
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     torch.cuda.empty_cache()
     models = ["meta-llama/Llama-2-7b-hf"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
