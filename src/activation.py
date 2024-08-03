@@ -11,23 +11,23 @@ from models import LlamaModelForProbing
 class Activation:
     def __init__(self, tokenizer: AutoTokenizer, model: torch.nn.Module, dataset: Dataset):
         self.tokenizer = tokenizer
-        self.model = model
         self.dataset = dataset
         self.cwd = Path.cwd()
         self.lang = self.dataset.lang
         self.act_data_path = Path(self.cwd, f"outputs/activation/act_{self.lang}.pkl")
+        self.model = None if self.act_data_path.exists() else model
         Path.mkdir(self.act_data_path.parent, exist_ok=True, parents=True)
     
     def info(self) -> str:
         return f"[INFO] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     
-    def get_activation_probability(self, batch_size: int) -> dict:
+    def get_activation_probability(self, batch_size: int, data_frac: float) -> dict:
         if self.act_data_path.exists():
             out = pickle.load(open(self.act_data_path, "rb"))
             print(f"{self.info()}: The activation data is loaded from {self.act_data_path}")
             return out
         
-        dl = self.dataset.prepare_dataloader(batch_size=batch_size, frac=0.01)
+        dl = self.dataset.prepare_dataloader(batch_size=batch_size, frac=data_frac)
         total_tokens = 0
         total_avg_neuron_out = 0
         total_gt_zero_count = 0
@@ -35,7 +35,8 @@ class Activation:
         with tqdm.tqdm(iterable=dl, 
                        desc=f"Calculating activation for lang: {self.lang}",
                        unit=" batches",
-                       colour="green") as pbar:
+                       colour="green",
+                       ascii=True) as pbar:
             for input_dict in pbar:
                 out_dict = self.model(**input_dict)
                 total_avg_neuron_out += out_dict["avg_neuron_out"] # (L, 4d) 
@@ -62,11 +63,10 @@ def main(model_name: str, device: torch.device) -> None:
     for lang in ["en", "fr", "es", "vi", "id", "ja", "zh"]:
         dataset = WikipediaDataset(tokenizer=tokenizer, lang=lang, max_context_len=max_context_len)   
         act = Activation(tokenizer=tokenizer, model=model, dataset=dataset)
-        out = act.get_activation_probability(batch_size=batch_size) 
+        out = act.get_activation_probability(batch_size=batch_size, data_frac=1.0) 
     
 if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-    torch.cuda.empty_cache()
     models = ["meta-llama/Llama-2-7b-hf"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
