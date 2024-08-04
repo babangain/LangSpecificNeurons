@@ -9,12 +9,13 @@ from dataset import WikipediaDataset
 from models import LlamaModelForProbing
       
 class Activation:
-    def __init__(self, tokenizer: AutoTokenizer, model: torch.nn.Module, dataset: Dataset):
+    def __init__(self, tokenizer: AutoTokenizer, model: torch.nn.Module, model_name: str, dataset: Dataset):
         self.tokenizer = tokenizer
         self.dataset = dataset
         self.cwd = Path.cwd()
         self.lang = self.dataset.lang
-        self.act_data_path = Path(self.cwd, f"outputs/activation/act_{self.lang}.pkl")
+        self.model_name = model_name
+        self.act_data_path = Path(self.cwd, f"outputs/activation/{self.model_name}/act_{self.lang}.pkl")
         self.model = None if self.act_data_path.exists() else model
         Path.mkdir(self.act_data_path.parent, exist_ok=True, parents=True)
     
@@ -62,7 +63,7 @@ def main(model_name: str, device: torch.device) -> None:
     
     for lang in ["en", "fr", "es", "vi", "id", "ja", "zh"]:
         dataset = WikipediaDataset(tokenizer=tokenizer, lang=lang, max_context_len=max_context_len)   
-        act = Activation(tokenizer=tokenizer, model=model, dataset=dataset)
+        act = Activation(tokenizer=tokenizer, model=model, model_name=model_name.split("/")[-1], dataset=dataset)
         out = act.get_activation_probability(batch_size=batch_size, data_frac=1.0) 
     
 if __name__ == "__main__":

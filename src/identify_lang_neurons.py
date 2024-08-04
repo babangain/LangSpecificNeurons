@@ -10,10 +10,11 @@ from models import LlamaModelForProbing
 from activation import Activation
 
 class LangNeuron:
-    def __init__(self, device: torch.device, tokenizer: AutoTokenizer, model: torch.nn.Module, lang_neuron_config: dict):
+    def __init__(self, device: torch.device, tokenizer: AutoTokenizer, model: torch.nn.Module, model_name: str, lang_neuron_config: dict):
         self.device = device
         self.tokenizer = tokenizer
         self.model = model
+        self.model_name = model_name
         
         self.Tmax = lang_neuron_config["max_context_len"]
         self.batch_size = lang_neuron_config["batch_size"]
@@ -36,7 +37,7 @@ class LangNeuron:
         sum_act_prob = 0
         for lang in self.lang_list:
             dataset = WikipediaDataset(tokenizer=self.tokenizer, lang=lang, max_context_len=self.Tmax)   
-            act = Activation(tokenizer=self.tokenizer, model=self.model, dataset=dataset)
+            act = Activation(tokenizer=self.tokenizer, model=self.model, model_name=self.model_name, dataset=dataset)
             act_prob = act.get_activation_probability(batch_size=self.batch_size, data_frac=self.data_frac)["act_prob"].to(self.device)
             act_prob_dict[lang] = act_prob
             sum_act_prob += act_prob
@@ -90,7 +91,7 @@ def main(model_name: str, device: torch.device) -> None:
     lang_neuron_config = {
         "max_context_len": 512,
         "batch_size": 4,
-        "lang_list": ["en", "fr", "es", "vi", "id", "ja"],
+        "lang_list": ["en", "fr", "es", "vi", "id", "ja", "zh"],
         "lang_neuron_frac": 0.01,
         "threshold_quantile": 0.95,
         "data_frac": 1.0
@@ -98,7 +99,7 @@ def main(model_name: str, device: torch.device) -> None:
     
     is_act_data_path = []
     for lang in lang_neuron_config["lang_list"]:
-        is_act_data_path.append(Path(Path.cwd(), f"outputs/activation/act_{lang}.pkl").exists())
+        is_act_data_path.append(Path(Path.cwd(), f"outputs/activation/{model_name.split('/')[-1]}/act_{lang}.pkl").exists())
     if all(is_act_data_path):
         model = None
     elif "llama" in model_name.lower():
@@ -109,6 +110,7 @@ def main(model_name: str, device: torch.device) -> None:
     lang_neuron = LangNeuron(device=device,
                              tokenizer=tokenizer, 
                              model=model, 
+                             model_name=model_name.split("/")[-1],
                              lang_neuron_config=lang_neuron_config)
     neuron_dist = lang_neuron.get_lang_specific_neurons_dist()
     print(neuron_dist)
