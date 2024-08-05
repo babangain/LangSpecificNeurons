@@ -31,13 +31,15 @@ class LangNeuron:
         self.int_d = self.norm_act_prob[self.lang_list[0]].shape[1]
         self.m = round(self.lang_neuron_frac * self.L * self.int_d)
         self.lang_neurons = self._identify_lang_neurons()
+        self.neuron_to_lang = self._get_neuron_to_lang_map()
+        self.lang_to_neuron = self._get_lang_to_neuron_map()
     
     def _get_act_prob(self) -> dict:
         act_prob_dict = {}
         sum_act_prob = 0
         for lang in self.lang_list:
-            dataset = WikipediaDataset(tokenizer=self.tokenizer, lang=lang, max_context_len=self.Tmax)   
-            act = Activation(tokenizer=self.tokenizer, model=self.model, model_name=self.model_name, dataset=dataset)
+            dataset = WikipediaDataset(tokenizer=self.tokenizer, lang=lang, max_context_len=self.Tmax) if self.model else None
+            act = Activation(tokenizer=self.tokenizer, model=self.model, model_name=self.model_name, dataset=dataset, lang=lang)
             act_prob = act.get_activation_probability(batch_size=self.batch_size, data_frac=self.data_frac)["act_prob"].to(self.device)
             act_prob_dict[lang] = act_prob
             sum_act_prob += act_prob
@@ -67,23 +69,30 @@ class LangNeuron:
         lang_neurons = torch.nonzero(self.lape <= lape_cutoff) # (m, 2)
         return lang_neurons
     
-    def _lang_specific_neuron(self, layer_index: int, dim_index: int) -> List[str]:
-        assert layer_index >= 0 and layer_index < self.L, f"layer_index must be in [0, {self.L-1}]"
-        assert dim_index >= 0 and dim_index < self.int_d, f"dim_index must be in [0, {self.int_d-1}]"
-        assert layer_index in self.lang_neurons[:,0] and dim_index in self.lang_neurons[:,1], "The neuron must belong to lang neuron set!"
-        lang_spec_list = []
-        for lang, act_prob in self.act_prob.items():
-            if act_prob[layer_index, dim_index] > self.act_prob_threshold:
-                lang_spec_list.append(lang)
-        return lang_spec_list
+    def _get_neuron_to_lang_map(self) -> dict:
+        neuron_to_lang = {}
+        for m in range(self.lang_neurons.shape[0]):
+            i, j = self.lang_neurons[m].tolist()
+            lang_spec_list = []
+            for lang, act_prob in self.act_prob.items():
+                if act_prob[i, j] > self.act_prob_threshold:
+                    lang_spec_list.append(lang)
+            neuron_to_lang[(i,j)] = lang_spec_list
+        return neuron_to_lang
+    
+    def _get_lang_to_neuron_map(self) -> dict:
+        lang_to_neuron = {lang: [] for lang in self.lang_list}
+        for neuron, lang_list in self.neuron_to_lang.items():
+            for lang in lang_list:
+                lang_to_neuron[lang].append(list(neuron))
+        for lang, neuron_list in lang_to_neuron.items():
+            lang_to_neuron[lang] = torch.tensor(neuron_list)
+        return lang_to_neuron
     
     def get_lang_specific_neurons_dist(self) -> dict:
-        neuron_dist = dict(zip(self.lang_list, [0] * self.lang_list.__len__()))
-        for m in range(self.lang_neurons.shape[0]):
-            i, j = self.lang_neurons[m]
-            lang_spec_list = self._lang_specific_neuron(layer_index=i, dim_index=j)
-            for lang in lang_spec_list:
-                neuron_dist[lang] += 1
+        neuron_dist = {}
+        for lang, neuron_tensor in self.lang_to_neuron.items():
+            neuron_dist[lang] = neuron_tensor.shape[0]
         return neuron_dist
 
 def main(model_name: str, device: torch.device) -> None:
@@ -112,8 +121,7 @@ def main(model_name: str, device: torch.device) -> None:
                              model=model, 
                              model_name=model_name.split("/")[-1],
                              lang_neuron_config=lang_neuron_config)
-    neuron_dist = lang_neuron.get_lang_specific_neurons_dist()
-    print(neuron_dist)
+    print(lang_neuron.get_lang_specific_neurons_dist())
     
 if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = "2"
