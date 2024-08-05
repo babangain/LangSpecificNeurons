@@ -2,11 +2,11 @@ import torch, tqdm, os, sys, pickle, datetime
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader, Subset
 from datasets import load_dataset
-from typing import Tuple, List
+from typing import Tuple, List, Union
 from transformers import AutoTokenizer
 
 class WikipediaDataset(Dataset):
-    def __init__(self, tokenizer: AutoTokenizer, lang: str, max_context_len: int) -> None:
+    def __init__(self, tokenizer: Union[AutoTokenizer, None], lang: str, max_context_len: int) -> None:
         super(WikipediaDataset, self).__init__()
         self.cwd = Path.cwd()
         self.lang = lang
@@ -20,6 +20,8 @@ class WikipediaDataset(Dataset):
         else:
             Path.mkdir(self.ds_file_name.parent, exist_ok=True, parents=True)
             self.ds = self.get_dataset()
+        
+        self.ds.append(0) # last token ID must be eot token ID
     
     def info(self) -> str:
         return f"[INFO] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
@@ -46,18 +48,23 @@ class WikipediaDataset(Dataset):
         return token_ids
     
     def __len__(self) -> int:
-        return int(len(self.ds)/self.Tmax)
+        return int((len(self.ds)-1)/self.Tmax)
     
-    def __getitem__(self, index: int) -> torch.tensor:
+    def __getitem__(self, index: int) -> Tuple[torch.tensor, torch.tensor]:
         assert index < len(self) and index >= 0, f"Index must be in between 0 to {len(self)-1}"
         start = self.Tmax * index
         end = start + self.Tmax
-        return torch.tensor(self.ds[start:end]) # (Tmax,)
+        x = torch.tensor(self.ds[start:end]) # (Tmax,)
+        y = torch.tensor(self.ds[start+1:end+1]) # (Tmax,)
+        return (x, y)
     
-    def collate_function(self, data: List[torch.tensor]) -> dict:
-        input_ids = torch.stack(data, dim=0) # (b, Tmax)
+    def collate_function(self, data: List[Tuple[torch.tensor, torch.tensor]]) -> dict:
+        data_x = [x for x, y in data]
+        data_y = [y for x, y in data]
+        input_ids = torch.stack(data_x, dim=0) # (b, Tmax)
+        target_ids = torch.stack(data_y, dim=0) # (b, Tmax)
         attention_mask = torch.ones_like(input_ids)
-        return {"input_ids": input_ids, "attention_mask": attention_mask}
+        return {"input_ids": input_ids, "target_ids": target_ids, "attention_mask": attention_mask}
     
     def prepare_dataloader(self, batch_size: int, frac: float) -> DataLoader:
         indices = list(range(0, int(len(self) * frac)))
@@ -67,13 +74,9 @@ class WikipediaDataset(Dataset):
 
 def main():
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
-    ds = WikipediaDataset(tokenizer=tokenizer, lang="en", max_context_len=512)
-    ds = WikipediaDataset(tokenizer=tokenizer, lang="fr", max_context_len=512)
-    ds = WikipediaDataset(tokenizer=tokenizer, lang="es", max_context_len=512)
-    ds = WikipediaDataset(tokenizer=tokenizer, lang="vi", max_context_len=512)
-    ds = WikipediaDataset(tokenizer=tokenizer, lang="id", max_context_len=512)
-    ds = WikipediaDataset(tokenizer=tokenizer, lang="ja", max_context_len=512)
-    ds = WikipediaDataset(tokenizer=tokenizer, lang="zh", max_context_len=512)
+    lang_list = ["en", "fr", "es", "vi", "id", "ja", "zh"]
+    for lang in lang_list:
+        ds = WikipediaDataset(tokenizer=tokenizer, lang=lang, max_context_len=512)
 
 if __name__ == "__main__":
     main()

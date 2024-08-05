@@ -3,25 +3,31 @@ from pathlib import Path
 sys.path.append(Path(__file__).parent)
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from torch.utils.data import Dataset, DataLoader
-from typing import List, Tuple
+from typing import List, Tuple, Union
 import pandas as pd
-from dataset import WikipediaDataset
 from models import LlamaModelForProbing
 from activation import Activation
 
 class LangNeuron:
-    def __init__(self, device: torch.device, tokenizer: AutoTokenizer, model: torch.nn.Module, model_name: str, lang_neuron_config: dict):
+    def __init__(self, device: Union[torch.device, None], model_name: str, lang_neuron_config: Union[dict, None]):
         self.device = device
-        self.tokenizer = tokenizer
-        self.model = model
-        self.model_name = model_name
+        self.model_name = model_name.split("/")[-1] 
+        self.cwd = Path.cwd()
+        self.lang_neuron_path = Path(self.cwd, f"outputs/lang_neurons/{self.model_name}/lang_neuron_data.pkl")
+        self.lang_neuron_path.parent.mkdir(parents=True, exist_ok=True)
         
-        self.Tmax = lang_neuron_config["max_context_len"]
-        self.batch_size = lang_neuron_config["batch_size"]
-        self.lang_list = lang_neuron_config["lang_list"] 
-        self.lang_neuron_frac = lang_neuron_config["lang_neuron_frac"]
-        self.threshold_quantile = lang_neuron_config["threshold_quantile"] 
-        self.data_frac = lang_neuron_config["data_frac"]
+        if self.lang_neuron_path.exists():
+            self.__dict__.update(pickle.load(open(self.lang_neuron_path, "rb")))
+            print(f"{self.info()}: The lang neurons data is loaded from {self.lang_neuron_path}")
+        else:
+            self._init_attr(config=lang_neuron_config)
+            pickle.dump(self.__dict__, open(self.lang_neuron_path, "wb"))
+            print(f"{self.info()}: The lang neurons data is stored at {self.lang_neuron_path}")
+    
+    def _init_attr(self, config: dict):
+        self.lang_list = config["lang_list"] 
+        self.lang_neuron_frac = config["lang_neuron_frac"]
+        self.threshold_quantile = config["threshold_quantile"]
         
         self.norm_act_prob, self.act_prob = self._get_act_prob()
         self.act_prob_threshold = self._calculate_act_prob_threshold()
@@ -34,13 +40,15 @@ class LangNeuron:
         self.neuron_to_lang = self._get_neuron_to_lang_map()
         self.lang_to_neuron = self._get_lang_to_neuron_map()
     
+    def info(self) -> str:
+        return f"[INFO] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+           
     def _get_act_prob(self) -> dict:
         act_prob_dict = {}
         sum_act_prob = 0
         for lang in self.lang_list:
-            dataset = WikipediaDataset(tokenizer=self.tokenizer, lang=lang, max_context_len=self.Tmax) if self.model else None
-            act = Activation(tokenizer=self.tokenizer, model=self.model, model_name=self.model_name, dataset=dataset, lang=lang)
-            act_prob = act.get_activation_probability(batch_size=self.batch_size, data_frac=self.data_frac)["act_prob"].to(self.device)
+            act = Activation(model=None, model_name=self.model_name, dataset=None, lang=lang)
+            act_prob = act.get_activation_probability(batch_size=None, data_frac=None)["act_prob"].to(self.device)
             act_prob_dict[lang] = act_prob
             sum_act_prob += act_prob
         
@@ -96,31 +104,12 @@ class LangNeuron:
         return neuron_dist
 
 def main(model_name: str, device: torch.device) -> None:
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
     lang_neuron_config = {
-        "max_context_len": 512,
-        "batch_size": 4,
         "lang_list": ["en", "fr", "es", "vi", "id", "ja", "zh"],
         "lang_neuron_frac": 0.01,
-        "threshold_quantile": 0.95,
-        "data_frac": 1.0
+        "threshold_quantile": 0.95
     }
-    
-    is_act_data_path = []
-    for lang in lang_neuron_config["lang_list"]:
-        is_act_data_path.append(Path(Path.cwd(), f"outputs/activation/{model_name.split('/')[-1]}/act_{lang}.pkl").exists())
-    if all(is_act_data_path):
-        model = None
-    elif "llama" in model_name.lower():
-        model = LlamaModelForProbing(tokenizer=tokenizer, device=device)
-    else:
-        raise NotImplementedError("Invalid model name!")
-        
-    lang_neuron = LangNeuron(device=device,
-                             tokenizer=tokenizer, 
-                             model=model, 
-                             model_name=model_name.split("/")[-1],
-                             lang_neuron_config=lang_neuron_config)
+    lang_neuron = LangNeuron(device=device, model_name=model_name, lang_neuron_config=lang_neuron_config)
     print(lang_neuron.get_lang_specific_neurons_dist())
     
 if __name__ == "__main__":

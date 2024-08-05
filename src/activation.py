@@ -3,26 +3,25 @@ from pathlib import Path
 sys.path.append(Path(__file__).parent)
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from torch.utils.data import Dataset, DataLoader
-from typing import List, Tuple
+from typing import List, Tuple, Union
 import pandas as pd
 from dataset import WikipediaDataset
 from models import LlamaModelForProbing
       
 class Activation:
-    def __init__(self, tokenizer: AutoTokenizer, model: torch.nn.Module, model_name: str, dataset: Dataset, lang: str):
-        self.tokenizer = tokenizer
+    def __init__(self, model: Union[torch.nn.Module, None], model_name: str, dataset: Union[Dataset, None], lang: str):
         self.cwd = Path.cwd()
         self.lang = lang
-        self.model_name = model_name
+        self.model_name = model_name.split('/')[-1]
         self.act_data_path = Path(self.cwd, f"outputs/activation/{self.model_name}/act_{self.lang}.pkl")
-        self.model = None if self.act_data_path.exists() else model
-        self.dataset = None if self.act_data_path.exists() else dataset
+        self.model = model
+        self.dataset = dataset
         Path.mkdir(self.act_data_path.parent, exist_ok=True, parents=True)
     
     def info(self) -> str:
         return f"[INFO] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     
-    def get_activation_probability(self, batch_size: int, data_frac: float) -> dict:
+    def get_activation_probability(self, batch_size: Union[int, None], data_frac: Union[float, None]) -> dict:
         if self.act_data_path.exists():
             out = pickle.load(open(self.act_data_path, "rb"))
             print(f"{self.info()}: The activation data is loaded from {self.act_data_path}")
@@ -63,7 +62,7 @@ def main(model_name: str, device: torch.device) -> None:
     
     for lang in ["en", "fr", "es", "vi", "id", "ja", "zh"]:
         dataset = WikipediaDataset(tokenizer=tokenizer, lang=lang, max_context_len=max_context_len)   
-        act = Activation(tokenizer=tokenizer, model=model, model_name=model_name.split("/")[-1], dataset=dataset, lang=lang)
+        act = Activation(model=model, model_name=model_name, dataset=dataset, lang=lang)
         out = act.get_activation_probability(batch_size=batch_size, data_frac=1.0) 
     
 if __name__ == "__main__":
