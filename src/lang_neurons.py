@@ -29,7 +29,7 @@ class LangNeuron:
         self.lang_neuron_frac = config["lang_neuron_frac"]
         self.threshold_quantile = config["threshold_quantile"]
         
-        self.norm_act_prob, self.act_prob = self._get_act_prob()
+        self.norm_act_prob, self.act_prob = self._get_norm_act_prob()
         self.act_prob_threshold = self._calculate_act_prob_threshold()
         self.lape = self._calculate_LAPE_score()
         
@@ -43,7 +43,7 @@ class LangNeuron:
     def info(self) -> str:
         return f"[INFO] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
            
-    def _get_act_prob(self) -> dict:
+    def _get_norm_act_prob(self) -> dict:
         act_prob_dict = {}
         sum_act_prob = 0
         for lang in self.lang_list:
@@ -105,7 +105,7 @@ class LangNeuron:
 
 def main(model_name: str, device: torch.device) -> None:
     lang_neuron_config = {
-        "lang_list": ["en", "fr", "es", "vi", "id", "ja", "zh"],
+        "lang_list": ["en", "fr", "es", "hi", "bn", "tn", "te"],
         "lang_neuron_frac": 0.01,
         "threshold_quantile": 0.95
     }
@@ -113,10 +113,11 @@ def main(model_name: str, device: torch.device) -> None:
     print(lang_neuron.get_lang_specific_neurons_dist())
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
-    models = ["meta-llama/Llama-2-7b-hf"]
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    torch.cuda.empty_cache()
+    models = ["meta-llama/Llama-2-7b-hf", "bigscience/bloomz-7b1"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models[0], device=device)
+    main(models[1], device=device)
     

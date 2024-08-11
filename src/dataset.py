@@ -32,14 +32,14 @@ class WikipediaDataset(Dataset):
         token_ids = []
         count = 0
         with tqdm.tqdm(iterable=range(len(shuffled_ds)), 
-                       desc=f"Creating dataset for lang: {self.lang} (to be stopped after 100 M tokens)",
+                       desc=f"Creating dataset for lang: {self.lang} (to be stopped after 100M tokens)",
                        unit=" articles",
                        colour="green") as pbar:
             for i in pbar:
                 ids  = self.tokenizer(shuffled_ds[i]["text"])["input_ids"]
-                token_ids +=  ids # List[1M]
+                token_ids +=  ids # List[100M]
                 count += len(ids)
-                pbar.set_postfix(tokens_seen=f"{count/(10**6):.2f} M")
+                pbar.set_postfix(tokens_seen=f"{count/(10**6):.2f}M")
                 if count > 10**8 and count % 4096 == 0:
                     break
         
@@ -74,7 +74,7 @@ class WikipediaDataset(Dataset):
 
 def main():
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
-    lang_list = ["en", "fr", "es", "vi", "id", "ja", "zh"]
+    lang_list = ["en", "fr", "es", "hi", "bn", "te", "tn"]
     for lang in lang_list:
         ds = WikipediaDataset(tokenizer=tokenizer, lang=lang, max_context_len=512)
 

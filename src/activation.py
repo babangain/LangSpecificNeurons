@@ -6,7 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 from typing import List, Tuple, Union
 import pandas as pd
 from dataset import WikipediaDataset
-from models import LlamaModelForProbing
+from models import LlamaModelForProbing, BloomzModelForProbing
       
 class Activation:
     def __init__(self, model: Union[torch.nn.Module, None], model_name: str, dataset: Union[Dataset, None], lang: str):
@@ -35,10 +35,9 @@ class Activation:
         with tqdm.tqdm(iterable=dl, 
                        desc=f"Calculating activation for lang: {self.lang}",
                        unit=" batches",
-                       colour="green",
-                       ascii=True) as pbar:
+                       colour="green") as pbar:
             for input_dict in pbar:
-                out_dict = self.model(**input_dict)
+                out_dict = self.model(input_dict["input_ids"], input_dict["attention_mask"], intervene_config=None)
                 total_avg_neuron_out += out_dict["avg_neuron_out"] # (L, 4d) 
                 total_gt_zero_count += out_dict["neuron_out_gt_zero_count"] # (L, 4d)
                 total_tokens += out_dict["tokens_count"] # scalar
@@ -53,23 +52,27 @@ class Activation:
 def main(model_name: str, device: torch.device) -> None:
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if "llama" in model_name.lower():
-        model = LlamaModelForProbing(tokenizer=tokenizer, device=device)
+        model = LlamaModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
+    elif "bloomz" in model_name.lower():
+        model = BloomzModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
     else:
         raise NotImplementedError("Invalid model name!")
     
     max_context_len = 512
     batch_size = 4
     
-    for lang in ["en", "fr", "es", "vi", "id", "ja", "zh"]:
+    for lang, data_frac in zip(["en", "fr", "es", "hi", "bn", "te", "tn"],
+                               [0.001]*6 + [0.01]):
         dataset = WikipediaDataset(tokenizer=tokenizer, lang=lang, max_context_len=max_context_len)   
         act = Activation(model=model, model_name=model_name, dataset=dataset, lang=lang)
-        out = act.get_activation_probability(batch_size=batch_size, data_frac=1.0) 
+        out = act.get_activation_probability(batch_size=batch_size, data_frac=data_frac) 
     
 if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-    models = ["meta-llama/Llama-2-7b-hf"]
+    torch.cuda.empty_cache()
+    models = ["meta-llama/Llama-2-7b-hf", "bigscience/bloomz-7b1"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models[0], device=device)
+    main(models[1], device=device)
     
