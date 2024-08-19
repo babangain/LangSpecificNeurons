@@ -60,17 +60,18 @@ def main(model_name: str, device: torch.device) -> None:
     
     max_context_len = 512
     batch_size = 4
-    
-    for lang, data_frac in zip(["en", "fr", "es", "hi", "bn", "te", "tn"],
-                               [0.001]*6 + [0.01]):
+    zip1 = zip(["en", "es", "fr", "hi", "bn", "te"], [0.75] * 6)
+    for lang, data_frac in zip1:
         dataset = WikipediaDataset(tokenizer=tokenizer, lang=lang, max_context_len=max_context_len)   
         act = Activation(model=model, model_name=model_name, dataset=dataset, lang=lang)
         out = act.get_activation_probability(batch_size=batch_size, data_frac=data_frac) 
     
+    print("DONE")
+    
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
     torch.cuda.empty_cache()
-    models = ["meta-llama/Llama-2-7b-hf", "bigscience/bloomz-7b1"]
+    models = ["meta-llama/Llama-2-7b-hf", "meta-llama/Llama-2-7b-chat-hf", "bigscience/bloomz-7b1"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     

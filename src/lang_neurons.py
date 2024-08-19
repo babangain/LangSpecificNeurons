@@ -7,13 +7,15 @@ from typing import List, Tuple, Union
 import pandas as pd
 from models import LlamaModelForProbing
 from activation import Activation
+from lang_map import lang_map
 
 class LangNeuron:
     def __init__(self, device: Union[torch.device, None], model_name: str, lang_neuron_config: Union[dict, None]):
         self.device = device
         self.model_name = model_name.split("/")[-1] 
         self.cwd = Path.cwd()
-        self.lang_neuron_path = Path(self.cwd, f"outputs/lang_neurons/{self.model_name}/lang_neuron_data.pkl")
+        self.lang_set = lang_neuron_config["lang_set"]
+        self.lang_neuron_path = Path(self.cwd, f"outputs/lang_neurons/{self.model_name}/{self.lang_set}/lang_neuron_data.pkl")
         self.lang_neuron_path.parent.mkdir(parents=True, exist_ok=True)
         
         if self.lang_neuron_path.exists():
@@ -25,7 +27,7 @@ class LangNeuron:
             print(f"{self.info()}: The lang neurons data is stored at {self.lang_neuron_path}")
     
     def _init_attr(self, config: dict):
-        self.lang_list = config["lang_list"] 
+        self.lang_list = lang_map[config["lang_set"]]
         self.lang_neuron_frac = config["lang_neuron_frac"]
         self.threshold_quantile = config["threshold_quantile"]
         
@@ -105,7 +107,7 @@ class LangNeuron:
 
 def main(model_name: str, device: torch.device) -> None:
     lang_neuron_config = {
-        "lang_list": ["en", "fr", "es", "hi", "bn", "tn", "te"],
+        "lang_set": "set2",
         "lang_neuron_frac": 0.01,
         "threshold_quantile": 0.95
     }
@@ -115,7 +117,7 @@ def main(model_name: str, device: torch.device) -> None:
 if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     torch.cuda.empty_cache()
-    models = ["meta-llama/Llama-2-7b-hf", "bigscience/bloomz-7b1"]
+    models = ["meta-llama/Llama-2-7b-hf", "meta-llama/Llama-2-7b-chat-hf", "bigscience/bloomz-7b1"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     

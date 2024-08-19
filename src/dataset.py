@@ -69,7 +69,7 @@ class WikipediaDataset(Dataset):
     def prepare_dataloader(self, batch_size: int, frac: float) -> DataLoader:
         indices = list(range(0, int(len(self) * frac)))
         subset = Subset(self, indices=indices)
-        dl = DataLoader(subset, batch_size=batch_size, shuffle=True, collate_fn=self.collate_function, drop_last=True)
+        dl = DataLoader(subset, batch_size=batch_size, shuffle=False, collate_fn=self.collate_function, drop_last=True)
         return dl
 
 def main():
