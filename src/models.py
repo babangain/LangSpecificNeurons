@@ -7,6 +7,22 @@ import pandas as pd
 from dataset import WikipediaDataset
 from abc import ABC, abstractmethod
 
+models_dict = {
+    "llama2-pt": "meta-llama/Llama-2-7b-hf", # Done
+    "llama2-ft": "meta-llama/Llama-2-7b-chat-hf", # Done
+    "llama3-pt": "meta-llama/Meta-Llama-3.1-8B", # Done
+    "llama3-ft": "meta-llama/Meta-Llama-3.1-8B-Instruct", # Done
+    "mistral-pt": "mistralai/Mistral-7B-v0.3", # Done
+    "mistral-ft": "mistralai/Mistral-7B-Instruct-v0.3", # Done
+    "bloomz": "bigscience/bloomz-7b1", # Done
+    "bloomz-mt": "bigscience/bloomz-7b1-mt", # Done
+    "mixtral-pt": "mistralai/Mixtral-8x7B-v0.1",
+    "mixtral-ft": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+    "sarvam": "sarvamai/sarvam-2b-v0.5", # Done
+    "aya101": "CohereForAI/aya-101",
+    "aya23": "CohereForAI/aya-23-8B"
+}
+
 class AbstractModelForProbing(ABC, torch.nn.Module):
     def __init__(self, device: torch.device, model_name: str, model: torch.nn.Module, tokenizer: Union[AutoTokenizer, None]):
         super(AbstractModelForProbing, self).__init__()
@@ -99,6 +115,28 @@ class BloomzModelForProbing(AbstractModelForProbing):
     def get_target_module(self, layer_idx: int) -> torch.nn.Module:
         return self.get_layers()[layer_idx].mlp.gelu_impl
 
+class MistralModelForProbing(AbstractModelForProbing):
+    def __init__(self, device: torch.device, model_name: str, tokenizer: Union[AutoTokenizer, None]):
+        model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16)
+        super(MistralModelForProbing, self).__init__(device=device, model_name=model_name, model=model, tokenizer=tokenizer)
+    
+    def get_layers(self) -> torch.nn.ModuleList:
+        return self.model.model.layers
+    
+    def get_target_module(self, layer_idx: int) -> torch.nn.Module:
+        return self.get_layers()[layer_idx].mlp.act_fn
+
+class SarvamModelForProbing(AbstractModelForProbing):
+    def __init__(self, device: torch.device, model_name: str, tokenizer: Union[AutoTokenizer, None]):
+        model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16)
+        super(SarvamModelForProbing, self).__init__(device=device, model_name=model_name, model=model, tokenizer=tokenizer)
+    
+    def get_layers(self) -> torch.nn.ModuleList:
+        return self.model.model.layers
+    
+    def get_target_module(self, layer_idx: int) -> torch.nn.Module:
+        return self.get_layers()[layer_idx].mlp.act_fn
+
 def get_tokenizer_and_model(model_name: Union[str, None], device: torch.device) -> Tuple[AutoTokenizer, torch.nn.Module]:
     if model_name is None:
         tokenizer = None
@@ -109,6 +147,10 @@ def get_tokenizer_and_model(model_name: Union[str, None], device: torch.device) 
             model = LlamaModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
         elif "bloomz" in model_name.lower():
             model = BloomzModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
+        elif "mistral-7b" in model_name.lower():
+            model = MistralModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
+        elif "sarvam" in model_name.lower():
+            model = SarvamModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
         else:
             raise NotImplementedError("Invalid model name!")
     return tokenizer, model
@@ -129,11 +171,10 @@ def main(model_name: str, device: torch.device) -> None:
     print(out["logits"].sum())  
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
     torch.cuda.empty_cache()
-    models = ["meta-llama/Llama-2-7b-hf", "bigscience/bloomz-7b1"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models[1], device=device)
+    main(models_dict["sarvam"], device=device)
     

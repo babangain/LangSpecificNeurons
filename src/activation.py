@@ -6,7 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 from typing import List, Tuple, Union
 import pandas as pd
 from dataset import WikipediaDataset
-from models import get_tokenizer_and_model
+from models import get_tokenizer_and_model, models_dict
 from lang_map import lang_map
     
 class Activation:
@@ -51,29 +51,24 @@ class Activation:
         return out
         
 def main(model_name: str, device: torch.device) -> None:
-    get_tokenizer_and_model(model_name=model_name, device=device)
+    tokenizer, model = get_tokenizer_and_model(model_name=model_name, device=device)
     max_context_len = 512
     batch_size = 4
     zip1 = zip(lang_map["set1"], [0.75] * 6)
     zip2 = zip(lang_map["set3"], [0.75] * 6)
-    for lang, data_frac in zip1:
+    for lang, data_frac in zip2:
         dataset = WikipediaDataset(tokenizer=tokenizer, lang=lang, max_context_len=max_context_len)   
         act = Activation(model=model, model_name=model_name, dataset=dataset, lang=lang)
-        out = act.get_activation_probability(batch_size=batch_size, data_frac=data_frac) 
+        out = act.get_activation_data(batch_size=batch_size, data_frac=data_frac) 
     
     print("DONE")
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
     torch.cuda.empty_cache()
-    models = ["meta-llama/Meta-Llama-3.1-8B",
-              "meta-llama/Meta-Llama-3.1-8B-Instruct",
-              "mistralai/Mistral-7B-v0.3",
-              "mistralai/Mistral-7B-Instruct-v0.3"
-              ]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models[1], device=device)
+    main(models_dict["sarvam"], device=device)
     
     
