@@ -6,12 +6,12 @@ from torch.utils.data import Dataset, DataLoader
 from typing import List, Tuple, Union
 import pandas as pd
 from dataset import WikipediaDataset
-from models import LlamaModelForProbing, BloomzModelForProbing
+from models import get_tokenizer_and_model
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 class Perplexity:
-    def __init__(self, device: torch.device, tokenizer: AutoTokenizer, model: Union[torch.nn.Module, None], model_name: str, ppx_config: dict):
+    def __init__(self, device: torch.device, tokenizer: Union[AutoTokenizer, None], model: Union[torch.nn.Module, None], model_name: str, ppx_config: dict):
         self.model_name = model_name.split("/")[-1]
         self.cwd = Path.cwd()
         self.lang_set = ppx_config["lang_set"]
@@ -26,6 +26,8 @@ class Perplexity:
             state_dict = {k: v for k, v in self.__dict__.items() if k != "model"}
             pickle.dump(state_dict, open(self.ppx_path, "wb"))
             print(f"{self.info()}: The perplexity data is stored at {self.ppx_path}")
+        
+        self._plot_ppx_change(ppx_change=self.ppx_change)
     
     def _init_attr(self, device: torch.device, tokenizer: AutoTokenizer, model: torch.nn.Module, config: dict):
         self.device = device
@@ -100,14 +102,13 @@ class Perplexity:
         ppx_1d_tensor = torch.tensor(ppx_1d_list)
         ppx_2d_tensor = torch.tensor(ppx_2d_list)
         ppx_change = ppx_2d_tensor - ppx_1d_tensor
-        self._plot_ppx_change(ppx_change=ppx_change)
         return ppx_change
 
     def _plot_ppx_change(self, ppx_change: torch.tensor) -> None:
         save_path = str(Path(self.ppx_path.parent, "ppx_change.png"))
         plt.figure(figsize=(6,6))
         ppx_change_np = ppx_change.numpy()
-        sns.heatmap(ppx_change_np, annot=True, fmt=".2f", cmap="Reds", xticklabels=self.lang_neuron["lang_list"], yticklabels=self.lang_neuron["lang_list"], cbar=False)
+        sns.heatmap(ppx_change_np, annot=True, fmt=".2f", cmap="Reds", xticklabels=self.lang_list, yticklabels=self.lang_list, cbar=False)
         fs = 16
         plt.xlabel("Lang: j", fontsize=fs)
         plt.ylabel("Lang: i", fontsize=fs)
@@ -117,21 +118,13 @@ class Perplexity:
         plt.savefig(save_path, dpi=600, bbox_inches='tight')
         
 def main(model_name: str, device: torch.device) -> None:
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    if "llama" in model_name.lower():
-        model = LlamaModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
-    elif "bloomz" in model_name.lower():
-        model = BloomzModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
-    else:
-        raise NotImplementedError("Invalid model name!")
-    
+    tokenizer, model = get_tokenizer_and_model(model_name=None, device=device)
     ppx_config = {
         "max_context_len": 512,
         "batch_size": 4,
-        "lang_set": "set2",
+        "lang_set": "set1",
         "data_frac": 0.01
     }
-     
     ppx = Perplexity(device=device, tokenizer=tokenizer, model=model, model_name=model_name, ppx_config=ppx_config)
     
 if __name__ == "__main__":
@@ -140,4 +133,4 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models[1], device=device)
+    main(models[0], device=device)

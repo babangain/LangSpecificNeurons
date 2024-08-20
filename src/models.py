@@ -98,16 +98,23 @@ class BloomzModelForProbing(AbstractModelForProbing):
     
     def get_target_module(self, layer_idx: int) -> torch.nn.Module:
         return self.get_layers()[layer_idx].mlp.gelu_impl
-    
-def main(model_name: str, device: torch.device) -> None:
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    if "llama" in model_name.lower():
-        model = LlamaModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
-    elif "bloomz" in model_name.lower():
-        model = BloomzModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
-    else:
-        raise NotImplementedError("Invalid model name!")
 
+def get_tokenizer_and_model(model_name: Union[str, None], device: torch.device) -> Tuple[AutoTokenizer, torch.nn.Module]:
+    if model_name is None:
+        tokenizer = None
+        model = None
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        if "llama" in model_name.lower():
+            model = LlamaModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
+        elif "bloomz" in model_name.lower():
+            model = BloomzModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
+        else:
+            raise NotImplementedError("Invalid model name!")
+    return tokenizer, model
+        
+def main(model_name: str, device: torch.device) -> None:
+    tokenizer, model = get_tokenizer_and_model(model_name=model_name, device=device)
     ds = WikipediaDataset(tokenizer=tokenizer, lang="en", max_context_len=512)
     dl = ds.prepare_dataloader(batch_size=4, frac=0.001)
     input_dict = next(iter(dl))

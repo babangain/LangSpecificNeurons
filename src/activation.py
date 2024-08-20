@@ -6,8 +6,9 @@ from torch.utils.data import Dataset, DataLoader
 from typing import List, Tuple, Union
 import pandas as pd
 from dataset import WikipediaDataset
-from models import LlamaModelForProbing, BloomzModelForProbing
-      
+from models import get_tokenizer_and_model
+from lang_map import lang_map
+    
 class Activation:
     def __init__(self, model: Union[torch.nn.Module, None], model_name: str, dataset: Union[Dataset, None], lang: str):
         self.cwd = Path.cwd()
@@ -21,7 +22,7 @@ class Activation:
     def info(self) -> str:
         return f"[INFO] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     
-    def get_activation_probability(self, batch_size: Union[int, None], data_frac: Union[float, None]) -> dict:
+    def get_activation_data(self, batch_size: Union[int, None], data_frac: Union[float, None]) -> dict:
         if self.act_data_path.exists():
             out = pickle.load(open(self.act_data_path, "rb"))
             print(f"{self.info()}: The activation data is loaded from {self.act_data_path}")
@@ -50,17 +51,11 @@ class Activation:
         return out
         
 def main(model_name: str, device: torch.device) -> None:
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    if "llama" in model_name.lower():
-        model = LlamaModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
-    elif "bloomz" in model_name.lower():
-        model = BloomzModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
-    else:
-        raise NotImplementedError("Invalid model name!")
-    
+    get_tokenizer_and_model(model_name=model_name, device=device)
     max_context_len = 512
     batch_size = 4
-    zip1 = zip(["en", "es", "fr", "hi", "bn", "te"], [0.75] * 6)
+    zip1 = zip(lang_map["set1"], [0.75] * 6)
+    zip2 = zip(lang_map["set3"], [0.75] * 6)
     for lang, data_frac in zip1:
         dataset = WikipediaDataset(tokenizer=tokenizer, lang=lang, max_context_len=max_context_len)   
         act = Activation(model=model, model_name=model_name, dataset=dataset, lang=lang)
@@ -71,9 +66,14 @@ def main(model_name: str, device: torch.device) -> None:
 if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = "5"
     torch.cuda.empty_cache()
-    models = ["meta-llama/Llama-2-7b-hf", "meta-llama/Llama-2-7b-chat-hf", "bigscience/bloomz-7b1"]
+    models = ["meta-llama/Meta-Llama-3.1-8B",
+              "meta-llama/Meta-Llama-3.1-8B-Instruct",
+              "mistralai/Mistral-7B-v0.3",
+              "mistralai/Mistral-7B-Instruct-v0.3"
+              ]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
     main(models[1], device=device)
+    
     

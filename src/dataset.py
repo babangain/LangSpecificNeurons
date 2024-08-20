@@ -40,7 +40,7 @@ class WikipediaDataset(Dataset):
                 token_ids +=  ids # List[100M]
                 count += len(ids)
                 pbar.set_postfix(tokens_seen=f"{count/(10**6):.2f}M")
-                if count > 10**8 and count % 4096 == 0:
+                if count > 10**8:
                     break
         
         pickle.dump(token_ids, open(self.ds_file_name, "wb"))
@@ -74,7 +74,7 @@ class WikipediaDataset(Dataset):
 
 def main():
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
-    lang_list = ["en", "fr", "es", "hi", "bn", "te", "tn"]
+    lang_list = ["pa"]
     for lang in lang_list:
         ds = WikipediaDataset(tokenizer=tokenizer, lang=lang, max_context_len=512)
 
