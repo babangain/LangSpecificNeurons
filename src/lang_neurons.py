@@ -5,9 +5,13 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from torch.utils.data import Dataset, DataLoader
 from typing import List, Tuple, Union
 import pandas as pd
-from models import LlamaModelForProbing
+from models import get_tokenizer_and_model, models_dict
 from activation import Activation
 from lang_map import lang_map
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+from matplotlib_venn import venn3, venn3_circles
 
 class LangNeuron:
     def __init__(self, device: Union[torch.device, None], model_name: str, lang_neuron_config: Union[dict, None]):
@@ -50,7 +54,7 @@ class LangNeuron:
         sum_act_prob = 0
         for lang in self.lang_list:
             act = Activation(model=None, model_name=self.model_name, dataset=None, lang=lang)
-            act_prob = act.get_activation_probability(batch_size=None, data_frac=None)["act_prob"].to(self.device)
+            act_prob = act.get_activation_data(batch_size=None, data_frac=None)["act_prob"].to(self.device)
             act_prob_dict[lang] = act_prob
             sum_act_prob += act_prob
         
@@ -99,27 +103,123 @@ class LangNeuron:
             lang_to_neuron[lang] = torch.tensor(neuron_list)
         return lang_to_neuron
     
-    def get_lang_specific_neurons_dist(self) -> dict:
+    def get_lang_specific_neurons_dist(self, is_plot: bool) -> dict:
         neuron_dist = {}
         for lang, neuron_tensor in self.lang_to_neuron.items():
             neuron_dist[lang] = neuron_tensor.shape[0]
+            
+        if is_plot:
+            languages = list(neuron_dist.keys())
+            num_neurons = list(neuron_dist.values())
+            plt.figure(figsize=(len(neuron_dist), 10))
+            bars = plt.bar(languages, num_neurons, color='skyblue')
+            for bar in bars:
+                yval = bar.get_height()
+                plt.text(bar.get_x() + bar.get_width()/2.0, yval, int(yval), ha='center', va='bottom')
+            
+            plt.xlabel(f'Language of Set {self.lang_set[-1]}')
+            plt.ylabel('Number of Language Specific Neurons')
+            plt.title(f'Language Specific Neurons Distribution for {self.model_name}')
+            plt.xticks(rotation=45, ha='right')
+            plt.tight_layout()
+            save_path = Path(self.lang_neuron_path.parent, "lang_neuron_dist.png")
+            plt.savefig(str(save_path), format='png', dpi=300)
+            plt.clf()
         return neuron_dist
+    
+    def get_layerwise_neurons_dist(self, is_plot: bool) -> dict:
+        layer_neuron_dist = {}
+        for lang, neuron_tensor in self.lang_to_neuron.items():
+            layer_spec_dist = torch.zeros(size=(self.L,), dtype=torch.int64)
+            unique_val, counts = neuron_tensor[:, 0].unique(return_counts=True)
+            for u, c in zip(unique_val, counts):
+                layer_spec_dist[u] = c
+            layer_neuron_dist[lang] = layer_spec_dist
+        
+        neuron_dist = self.get_lang_specific_neurons_dist(is_plot=False)
+        for lang, layer_tensor in layer_neuron_dist.items():
+            assert layer_tensor.sum() == neuron_dist[lang], "Layerwise neurons count should match overall count!"
 
+        if is_plot:
+            df = pd.DataFrame(layer_neuron_dist, index=[f'{i}' for i in range(self.L)])
+            df = df.iloc[::-1] # reverses the order of layers so that bottom (0) appears at bottom of matrix
+            plt.figure(figsize=(len(layer_neuron_dist), 10))
+            sns.heatmap(df, annot=True, fmt="d", cmap="YlGnBu", cbar=True, linewidths=.5)
+            plt.xlabel(f'Language of Set {self.lang_set[-1]}')
+            plt.ylabel('Layer Indices (0: bottom)')
+            plt.title(f'Layerwise Neurons Distribution for {self.model_name}')
+            plt.xticks(rotation=45, ha='right')
+            plt.yticks(rotation=0)
+            plt.tight_layout()
+            save_path = Path(self.lang_neuron_path.parent, "layerwise_lang_neurons_dist.png")
+            plt.savefig(str(save_path), format='png', dpi=300)
+            plt.clf()
+        return layer_neuron_dist
+    
+    def get_neurons_overlap(self, is_plot: bool) -> dict:
+        keys = list(self.lang_to_neuron.keys())
+        matrix = pd.DataFrame(np.zeros((len(keys), len(keys)), dtype=np.int64), index=keys, columns=keys)
+        for i, key1 in enumerate(keys):
+            for j, key2 in enumerate(keys):
+                if i <= j:  
+                    data1 = {tuple(i) for i in self.lang_to_neuron[key1].tolist()}
+                    data2 = {tuple(i) for i in self.lang_to_neuron[key2].tolist()}
+                    common_elements = set(data1) & set(data2)
+                    count_common = len(common_elements)
+                    matrix.at[key1, key2] = count_common
+                    matrix.at[key2, key1] = count_common 
+        
+        neurons_dist = self.get_lang_specific_neurons_dist(is_plot=False)
+        matrix_dict = matrix.to_dict()
+        for key, val in matrix_dict.items():
+            assert neurons_dist[key] == val[key], "Diagonal should match with number of lang specific neurons!"
+
+        if is_plot:
+            plt.figure(figsize=(len(self.lang_list), len(self.lang_list)))
+            sns.heatmap(matrix, annot=True, cmap="YlGnBu", fmt="d", linewidths=.5)
+            plt.xlabel(f'Language of Set {self.lang_set[-1]}')
+            plt.ylabel(f'Language of Set {self.lang_set[-1]}')
+            plt.title(f'Neurons Overlap Between Languages for {self.model_name}')
+            plt.xticks(rotation=45, ha='right')
+            plt.yticks(rotation=45, ha='right')
+            plt.tight_layout()
+            save_path = Path(self.lang_neuron_path.parent, 'lang_neurons_overlap.png')
+            plt.savefig(str(save_path), format='png', dpi=300)
+            plt.clf()
+        return matrix_dict
+    
+    def plot_3_lang_overlap_venn(self, languages: List[str]) -> None:
+        assert len(languages) <= 3, "Venn diagrams only support up to 3 sets (languages)."
+        for lang in languages:
+            assert lang in self.lang_to_neuron, f"Language {lang} not found in lang neuron set."
+            
+        data = {}
+        for lang in languages:
+            data[lang] = {tuple(i) for i in self.lang_to_neuron[lang].tolist()}
+        set1, set2, set3 = data[languages[0]], data[languages[1]], data[languages[2]]
+        venn = venn3([set1, set2, set3], set_labels=languages)
+        venn3_circles([set1, set2, set3])
+        plt.title(f'Neurons Overlap Between Languages ({languages}) for {self.model_name}')
+        save_path = Path(self.lang_neuron_path.parent, f'neuron_overlap_{"_".join(languages)}.png')
+        plt.savefig(str(save_path), format='png', dpi=300)
+    
 def main(model_name: str, device: torch.device) -> None:
     lang_neuron_config = {
-        "lang_set": "set2",
+        "lang_set": "set1",
         "lang_neuron_frac": 0.01,
         "threshold_quantile": 0.95
     }
     lang_neuron = LangNeuron(device=device, model_name=model_name, lang_neuron_config=lang_neuron_config)
-    print(lang_neuron.get_lang_specific_neurons_dist())
+    print(lang_neuron.get_layerwise_neurons_dist(is_plot=True))
+    print(lang_neuron.get_lang_specific_neurons_dist(is_plot=True))
+    print(lang_neuron.get_neurons_overlap(is_plot=True))
+    print(lang_neuron.plot_3_lang_overlap_venn(languages=["zh","fr","es"]))
     
 if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     torch.cuda.empty_cache()
-    models = ["meta-llama/Llama-2-7b-hf", "meta-llama/Llama-2-7b-chat-hf", "bigscience/bloomz-7b1"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models[1], device=device)
+    main(models_dict["llama2-pt"], device=device)
     

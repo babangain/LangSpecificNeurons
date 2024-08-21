@@ -54,9 +54,9 @@ def main(model_name: str, device: torch.device) -> None:
     tokenizer, model = get_tokenizer_and_model(model_name=model_name, device=device)
     max_context_len = 512
     batch_size = 4
-    zip1 = zip(lang_map["set1"], [0.75] * 6)
-    zip2 = zip(lang_map["set3"], [0.75] * 6)
-    for lang, data_frac in zip2:
+    zip1 = zip(lang_map["set4"], [0.75] * 15)
+    zip2 = zip(lang_map["set3"], [0.75] * 8)
+    for lang, data_frac in zip1:
         dataset = WikipediaDataset(tokenizer=tokenizer, lang=lang, max_context_len=max_context_len)   
         act = Activation(model=model, model_name=model_name, dataset=dataset, lang=lang)
         out = act.get_activation_data(batch_size=batch_size, data_frac=data_frac) 
@@ -64,11 +64,11 @@ def main(model_name: str, device: torch.device) -> None:
     print("DONE")
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models_dict["sarvam"], device=device)
+    main(models_dict["aya101-ft"]["name"], device=device)
     
     
