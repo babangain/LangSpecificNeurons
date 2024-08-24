@@ -64,11 +64,11 @@ def main(model_name: str, device: torch.device) -> None:
     print("DONE")
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models_dict["aya101-ft"]["name"], device=device)
+    main(models_dict["sarvam-pt"], device=device)
     
     
