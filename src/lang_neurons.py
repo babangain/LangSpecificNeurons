@@ -7,7 +7,7 @@ from typing import List, Tuple, Union
 import pandas as pd
 from models import get_tokenizer_and_model, models_dict
 from activation import Activation
-from lang_map import lang_map
+from lang_map import lang_map, lang_triplet_map
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
@@ -131,9 +131,10 @@ class LangNeuron:
         layer_neuron_dist = {}
         for lang, neuron_tensor in self.lang_to_neuron.items():
             layer_spec_dist = torch.zeros(size=(self.L,), dtype=torch.int64)
-            unique_val, counts = neuron_tensor[:, 0].unique(return_counts=True)
-            for u, c in zip(unique_val, counts):
-                layer_spec_dist[u] = c
+            if len(neuron_tensor) != 0:
+                unique_val, counts = neuron_tensor[:, 0].unique(return_counts=True)
+                for u, c in zip(unique_val, counts):
+                    layer_spec_dist[u] = c
             layer_neuron_dist[lang] = layer_spec_dist
         
         neuron_dist = self.get_lang_specific_neurons_dist(is_plot=False)
@@ -164,7 +165,7 @@ class LangNeuron:
                 if i <= j:  
                     data1 = {tuple(i) for i in self.lang_to_neuron[key1].tolist()}
                     data2 = {tuple(i) for i in self.lang_to_neuron[key2].tolist()}
-                    common_elements = set(data1) & set(data2)
+                    common_elements = data1 & data2
                     count_common = len(common_elements)
                     matrix.at[key1, key2] = count_common
                     matrix.at[key2, key1] = count_common 
@@ -186,7 +187,7 @@ class LangNeuron:
             save_path = Path(self.lang_neuron_path.parent, 'lang_neurons_overlap.png')
             plt.savefig(str(save_path), format='png', dpi=300)
             plt.clf()
-        return matrix_dict
+        return matrix.to_dict()
     
     def plot_3_lang_overlap_venn(self, languages: List[str]) -> None:
         assert len(languages) <= 3, "Venn diagrams only support up to 3 sets (languages)."
@@ -202,18 +203,19 @@ class LangNeuron:
         plt.title(f'Neurons Overlap Between Languages ({languages}) for {self.model_name}')
         save_path = Path(self.lang_neuron_path.parent, f'neuron_overlap_{"_".join(languages)}.png')
         plt.savefig(str(save_path), format='png', dpi=300)
+        plt.clf()
     
-def main(model_name: str, device: torch.device) -> None:
+def main(model_name: str, lang_set: str, lang_triplet: List[str], device: torch.device) -> None:
     lang_neuron_config = {
-        "lang_set": "set1",
+        "lang_set": lang_set,
         "lang_neuron_frac": 0.01,
         "threshold_quantile": 0.95
     }
     lang_neuron = LangNeuron(device=device, model_name=model_name, lang_neuron_config=lang_neuron_config)
-    print(lang_neuron.get_layerwise_neurons_dist(is_plot=True))
-    print(lang_neuron.get_lang_specific_neurons_dist(is_plot=True))
-    print(lang_neuron.get_neurons_overlap(is_plot=True))
-    print(lang_neuron.plot_3_lang_overlap_venn(languages=["zh","fr","es"]))
+    # lang_neuron.get_layerwise_neurons_dist(is_plot=True)
+    # lang_neuron.get_lang_specific_neurons_dist(is_plot=True)
+    # lang_neuron.get_neurons_overlap(is_plot=True)
+    print(lang_neuron.plot_3_lang_overlap_venn(languages=lang_triplet))
     
 if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
@@ -221,5 +223,9 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models_dict["sarvam-pt"], device=device)
-    
+    for model_key in ["llama2-pt", "llama3-pt", "mistral-pt", "sarvam-pt"]:
+        for lang_set in ["set1", "set2", "set3", "set4"]:
+            for lang_triplet in lang_triplet_map[lang_set]:
+                main(model_name=models_dict[model_key], lang_set=lang_set, lang_triplet=lang_triplet, device=device)
+                print(f"Model: {model_key}, Lang set: {lang_set} done!")
+        
