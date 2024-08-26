@@ -212,10 +212,10 @@ def main(model_name: str, lang_set: str, lang_triplet: List[str], device: torch.
         "threshold_quantile": 0.95
     }
     lang_neuron = LangNeuron(device=device, model_name=model_name, lang_neuron_config=lang_neuron_config)
-    # lang_neuron.get_layerwise_neurons_dist(is_plot=True)
-    # lang_neuron.get_lang_specific_neurons_dist(is_plot=True)
-    # lang_neuron.get_neurons_overlap(is_plot=True)
-    print(lang_neuron.plot_3_lang_overlap_venn(languages=lang_triplet))
+    lang_neuron.get_layerwise_neurons_dist(is_plot=True)
+    lang_neuron.get_lang_specific_neurons_dist(is_plot=True)
+    lang_neuron.get_neurons_overlap(is_plot=True)
+    # print(lang_neuron.plot_3_lang_overlap_venn(languages=lang_triplet))
     
 if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
@@ -223,9 +223,9 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    for model_key in ["llama2-pt", "llama3-pt", "mistral-pt", "sarvam-pt"]:
+    for model_key in ["bloom-pt"]:
         for lang_set in ["set1", "set2", "set3", "set4"]:
-            for lang_triplet in lang_triplet_map[lang_set]:
-                main(model_name=models_dict[model_key], lang_set=lang_set, lang_triplet=lang_triplet, device=device)
-                print(f"Model: {model_key}, Lang set: {lang_set} done!")
-        
+            # for lang_triplet in lang_triplet_map[lang_set]:
+            main(model_name=models_dict[model_key], lang_set=lang_set, lang_triplet=None, device=device)
+            print(f"Model: {model_key}, Lang set: {lang_set} done!")
+    

@@ -7,21 +7,6 @@ import pandas as pd
 from dataset import WikipediaDataset
 from abc import ABC, abstractmethod
 
-models_dict = {
-    "llama2-pt": "meta-llama/Llama-2-7b-hf", # Done
-    "llama2-ft": "meta-llama/Llama-2-7b-chat-hf", # Done
-    "llama3-pt": "meta-llama/Meta-Llama-3.1-8B", # Done
-    "llama3-ft": "meta-llama/Meta-Llama-3.1-8B-Instruct", # Done
-    "mistral-pt": "mistralai/Mistral-7B-v0.3", # Done
-    "mistral-ft": "mistralai/Mistral-7B-Instruct-v0.3", # Done
-    "bloomz-pt": "bigscience/bloomz-7b1", # Done
-    "bloomz-mt-pt": "bigscience/bloomz-7b1-mt", # Done
-    "bloom-pt": "bigscience/bloom-7b1", # Done
-    "sarvam-pt": "sarvamai/sarvam-2b-v0.5", # Done
-    "aya101-ft": "CohereForAI/aya-101",
-    "aya23-ft": "CohereForAI/aya-23-8B"
-}
-
 class AbstractModelForProbing(ABC, torch.nn.Module):
     def __init__(self, device: torch.device, model_name: str, model: torch.nn.Module, tokenizer: Union[AutoTokenizer, None]):
         super(AbstractModelForProbing, self).__init__()

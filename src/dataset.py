@@ -4,24 +4,27 @@ from torch.utils.data import Dataset, DataLoader, Subset
 from datasets import load_dataset
 from typing import Tuple, List, Union
 from transformers import AutoTokenizer
+from utils import lang_map, models_map
 
 class WikipediaDataset(Dataset):
-    def __init__(self, tokenizer: Union[AutoTokenizer, None], lang: str, max_context_len: int) -> None:
+    def __init__(self, model_name: str, lang: str, max_context_len: int) -> None:
         super(WikipediaDataset, self).__init__()
         self.cwd = Path.cwd()
         self.lang = lang
-        self.ds_file_name = Path(self.cwd, f"data/{self.lang}.pkl")
-        self.tokenizer = tokenizer
+        self.model_name = model_name.split("/")[-1]
+        self.ds_file_name = Path(self.cwd, f"data/{self.model_name}/{self.lang}.pkl")
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.Tmax = max_context_len
         
         if self.ds_file_name.exists():
-            self.ds = pickle.load(open(self.ds_file_name, "rb"))
+            self.__dict__.update(pickle.load(open(self.ds_file_name, "rb")))
             print(f"{self.info()}: The dataset is loaded from {self.ds_file_name}")
         else:
             Path.mkdir(self.ds_file_name.parent, exist_ok=True, parents=True)
-            self.ds = self.get_dataset()
-        
-        self.ds.append(0) # last token ID must be eot token ID
+            self.ds, self.tokens_count = self.get_dataset()
+            self.ds.append(0) # last token ID must be eot token ID
+            pickle.dump(self.__dict__, open(self.ds_file_name, "wb"))
+            print(f"{self.info()}: The dataset is stored at {self.ds_file_name}")
     
     def info(self) -> str:
         return f"[INFO] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
@@ -42,10 +45,7 @@ class WikipediaDataset(Dataset):
                 pbar.set_postfix(tokens_seen=f"{count/(10**6):.2f}M")
                 if count > 10**8:
                     break
-        
-        pickle.dump(token_ids, open(self.ds_file_name, "wb"))
-        print(f"{self.info()}: The dataset is stored at {self.ds_file_name}")
-        return token_ids
+        return token_ids, count
     
     def __len__(self) -> int:
         return int((len(self.ds)-1)/self.Tmax)
@@ -72,11 +72,13 @@ class WikipediaDataset(Dataset):
         dl = DataLoader(subset, batch_size=batch_size, shuffle=False, collate_fn=self.collate_function, drop_last=True)
         return dl
 
-def main():
-    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
-    lang_list = ["pa"]
-    for lang in lang_list:
-        ds = WikipediaDataset(tokenizer=tokenizer, lang=lang, max_context_len=512)
+def main(model_name: str):
+    for lang in lang_map["set5"]:
+        ds = WikipediaDataset(model_name=model_name, lang=lang, max_context_len=512)
+        print(ds.tokens_count/10**6)
 
 if __name__ == "__main__":
-    main()
+    ml = ["llama2-pt", "llama3-pt", "mistral-pt", "bloom-pt", "bloomz-pt", "bloomz-mt-pt", "sarvam-pt", "aya23-ft", "aya101-ft", "llama2-ft", "llama3-ft", "mistral-ft"]
+    for model_key in [ml[4]]:
+        main(model_name=models_map[model_key])
+        print(f"Model: {model_key} done!")
