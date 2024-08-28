@@ -54,7 +54,7 @@ def main(model_name: str, device: torch.device) -> None:
     tokenizer, model = get_tokenizer_and_model(model_name=model_name, device=device)
     max_context_len = 512
     batch_size = 4
-    for lang in lang_map["set3"]:
+    for lang in ["es"]:
         dataset = WikipediaDataset(model_name=model_name, lang=lang, max_context_len=max_context_len)   
         act = Activation(model=model, model_name=model_name, dataset=dataset, lang=lang)
         data_frac = 1.0 if dataset.tokens_count < 75*10**5 else 0.75
@@ -68,6 +68,6 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models_map["sarvam-pt"], device=device)
+    main(models_map["aya23"], device=device)
     
     

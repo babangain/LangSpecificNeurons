@@ -5,9 +5,9 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from torch.utils.data import Dataset, DataLoader
 from typing import List, Tuple, Union
 import pandas as pd
-from models import get_tokenizer_and_model, models_dict
+from models import get_tokenizer_and_model
 from activation import Activation
-from lang_map import lang_map, lang_triplet_map
+from utils import lang_map, lang_triplet_map, models_map
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
@@ -223,9 +223,9 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    for model_key in ["bloom-pt"]:
+    for model_key in ["sarvam"]:
         for lang_set in ["set1", "set2", "set3", "set4"]:
             # for lang_triplet in lang_triplet_map[lang_set]:
-            main(model_name=models_dict[model_key], lang_set=lang_set, lang_triplet=None, device=device)
+            main(model_name=models_map[model_key], lang_set=lang_set, lang_triplet=None, device=device)
             print(f"Model: {model_key}, Lang set: {lang_set} done!")
     
