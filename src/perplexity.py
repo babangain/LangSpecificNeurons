@@ -6,12 +6,14 @@ from torch.utils.data import Dataset, DataLoader
 from typing import List, Tuple, Union
 import pandas as pd
 from dataset import WikipediaDataset
-from models import get_tokenizer_and_model, models_dict
+from models import get_tokenizer_and_model
 import matplotlib.pyplot as plt
 import seaborn as sns
+from utils import lang_map, models_map
 
 class Perplexity:
     def __init__(self, device: torch.device, tokenizer: Union[AutoTokenizer, None], model: Union[torch.nn.Module, None], model_name: str, ppx_config: dict):
+        self.full_model_name = model_name
         self.model_name = model_name.split("/")[-1]
         self.cwd = Path.cwd()
         self.lang_set = ppx_config["lang_set"]
@@ -102,7 +104,7 @@ class Perplexity:
         loss_2d_list = []
         
         for src_lang in self.lang_list:
-            src_dataset = WikipediaDataset(tokenizer=self.tokenizer, lang=src_lang, max_context_len=self.Tmax) 
+            src_dataset = WikipediaDataset(model_name=self.full_model_name ,lang=src_lang, max_context_len=self.Tmax) 
             src_ppx, src_loss = self._calc_ppx_for_lang(dataset=src_dataset, inv_lang=None, lang=src_lang)
             ppx_1d_list.append(src_ppx)
             loss_1d_list.append(src_loss)
@@ -110,7 +112,7 @@ class Perplexity:
             ppx_inv_list = []
             loss_inv_list = []
             for tgt_lang in self.lang_list:
-                tgt_dataset = WikipediaDataset(tokenizer=self.tokenizer, lang=tgt_lang, max_context_len=self.Tmax)
+                tgt_dataset = WikipediaDataset(model_name=self.full_model_name, lang=tgt_lang, max_context_len=self.Tmax)
                 tgt_ppx, tgt_loss = self._calc_ppx_for_lang(dataset=tgt_dataset, inv_lang=src_lang, lang=tgt_lang)
                 ppx_inv_list.append(tgt_ppx)
                 loss_inv_list.append(tgt_loss)
@@ -151,13 +153,13 @@ def main(model_name: str, lang_set: str, device: torch.device) -> None:
     ppx = Perplexity(device=device, tokenizer=tokenizer, model=model, model_name=model_name, ppx_config=ppx_config)
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    for model_key in ["bloom-pt"]:
-        for lang_set in ["set1", "set2", "set3", "set4"]:
-            main(model_name=models_dict[model_key], lang_set=lang_set, device=device)
+    for model_key in ["sarvam"]:
+        for lang_set in ["set2", "set3", "set1", "set4"]:
+            main(model_name=models_map[model_key], lang_set=lang_set, device=device)
             print(f"Model: {model_key}, Lang set: {lang_set} done!")
     
