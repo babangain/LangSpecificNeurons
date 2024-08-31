@@ -9,7 +9,7 @@ from dataset import WikipediaDataset
 from models import get_tokenizer_and_model
 import matplotlib.pyplot as plt
 import seaborn as sns
-from utils import lang_map, models_map
+from utils import lang_map, models_map, token_repr_map, lang_repr_map
 
 class Perplexity:
     def __init__(self, device: torch.device, tokenizer: Union[AutoTokenizer, None], model: Union[torch.nn.Module, None], model_name: str, ppx_config: dict):
@@ -130,17 +130,22 @@ class Perplexity:
     def _plot_change(self, change: torch.tensor, is_ppx: bool) -> None:
         name = "ppx" if is_ppx else "loss"
         save_path = str(Path(self.ppx_path.parent, f"{name}_change.png"))
-        plt.figure(figsize=(6,6))
         change_np = change.numpy()
-        sns.heatmap(change_np, annot=True, fmt=".2f", cmap="Reds", xticklabels=self.lang_list, yticklabels=self.lang_list, cbar=False)
-        fs = 16
-        plt.xlabel("Lang: j", fontsize=fs)
-        plt.ylabel("Lang: i", fontsize=fs)
-        plt.xticks(fontsize=fs)
-        plt.yticks(fontsize=fs)
-        title = "PPXC(i,j): Perplexity" if is_ppx else "CELC(i,j): CE Loss"
-        plt.title(f"{title} change at j after intervention at i", fontsize=fs)
-        plt.savefig(save_path, dpi=600, bbox_inches='tight')
+        plt.figure(figsize=(len(self.lang_list), len(self.lang_list)))
+        sns.heatmap(change_np, annot=True, cmap="Reds", fmt=".2f", linewidths=.5, xticklabels=self.lang_list, yticklabels=self.lang_list)
+        plt.xlabel(f'Language - i of Set {self.lang_set[-1]}')
+        plt.ylabel(f'Language - j of Set {self.lang_set[-1]}')
+        tokens = {k: v for k, v in token_repr_map[self.model_name].items() if k in lang_map[self.lang_set]}
+        lang_repr = {k: v for k, v in lang_repr_map[self.model_name].items() if k in lang_map[self.lang_set]}
+        ch_type = "PPXC(i,j): Perplexity" if is_ppx else "CELC(i,j): CE Loss"
+        title = f'{self.model_name}: {ch_type} change at language j after intervention at language i\n' + f'Tokens seen (in M): {tokens}\n' + f'Lang repr: {lang_repr}'
+            
+        plt.title(title, wrap=True)
+        plt.xticks(rotation=45, ha='right')
+        plt.yticks(rotation=45, ha='right')
+        plt.tight_layout()
+        plt.savefig(str(save_path), format='png', dpi=300)
+        plt.clf()
         
 def main(model_name: str, lang_set: str, device: torch.device) -> None:
     tokenizer, model = get_tokenizer_and_model(model_name=model_name, device=device)
@@ -148,18 +153,18 @@ def main(model_name: str, lang_set: str, device: torch.device) -> None:
         "max_context_len": 512,
         "batch_size": 4,
         "lang_set": lang_set,
-        "data_frac": 0.0001
+        "data_frac": 0.001
     }
     ppx = Perplexity(device=device, tokenizer=tokenizer, model=model, model_name=model_name, ppx_config=ppx_config)
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
     for model_key in ["sarvam"]:
-        for lang_set in ["set2", "set3", "set1", "set4"]:
+        for lang_set in ["set3", "set1", "set2", "set4"]:
             main(model_name=models_map[model_key], lang_set=lang_set, device=device)
             print(f"Model: {model_key}, Lang set: {lang_set} done!")
     

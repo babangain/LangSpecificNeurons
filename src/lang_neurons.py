@@ -7,7 +7,7 @@ from typing import List, Tuple, Union
 import pandas as pd
 from models import get_tokenizer_and_model
 from activation import Activation
-from utils import lang_map, lang_triplet_map, models_map
+from utils import lang_map, lang_triplet_map, models_map, token_repr_map, lang_repr_map
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
@@ -119,7 +119,11 @@ class LangNeuron:
             
             plt.xlabel(f'Language of Set {self.lang_set[-1]}')
             plt.ylabel('Number of Language Specific Neurons')
-            plt.title(f'Language Specific Neurons Distribution for {self.model_name}')
+            tokens = {k: v for k, v in token_repr_map[self.model_name].items() if k in lang_map[self.lang_set]}
+            lang_repr = {k: v for k, v in lang_repr_map[self.model_name].items() if k in lang_map[self.lang_set]}
+            title = f'{self.model_name}: Language Specific Neurons Distribution\n' + f'Tokens seen (in M): {tokens}\n' + f'Lang repr: {lang_repr}'
+            
+            plt.title(title, wrap=True)
             plt.xticks(rotation=45, ha='right')
             plt.tight_layout()
             save_path = Path(self.lang_neuron_path.parent, "lang_neuron_dist.png")
@@ -148,7 +152,11 @@ class LangNeuron:
             sns.heatmap(df, annot=True, fmt="d", cmap="YlGnBu", cbar=True, linewidths=.5)
             plt.xlabel(f'Language of Set {self.lang_set[-1]}')
             plt.ylabel('Layer Indices (0: bottom)')
-            plt.title(f'Layerwise Neurons Distribution for {self.model_name}')
+            tokens = {k: v for k, v in token_repr_map[self.model_name].items() if k in lang_map[self.lang_set]}
+            lang_repr = {k: v for k, v in lang_repr_map[self.model_name].items() if k in lang_map[self.lang_set]}
+            title = f'{self.model_name}: Layerwise Neurons Distribution\n' + f'Tokens seen (in M): {tokens}\n' + f'Lang repr: {lang_repr}'
+            
+            plt.title(title, wrap=True)
             plt.xticks(rotation=45, ha='right')
             plt.yticks(rotation=0)
             plt.tight_layout()
@@ -180,7 +188,11 @@ class LangNeuron:
             sns.heatmap(matrix, annot=True, cmap="YlGnBu", fmt="d", linewidths=.5)
             plt.xlabel(f'Language of Set {self.lang_set[-1]}')
             plt.ylabel(f'Language of Set {self.lang_set[-1]}')
-            plt.title(f'Neurons Overlap Between Languages for {self.model_name}')
+            tokens = {k: v for k, v in token_repr_map[self.model_name].items() if k in lang_map[self.lang_set]}
+            lang_repr = {k: v for k, v in lang_repr_map[self.model_name].items() if k in lang_map[self.lang_set]}
+            title = f'{self.model_name}: Neurons Overlap Between Languages\n' + f'Tokens seen (in M): {tokens}\n' + f'Lang repr: {lang_repr}'
+            
+            plt.title(title, wrap=True)
             plt.xticks(rotation=45, ha='right')
             plt.yticks(rotation=45, ha='right')
             plt.tight_layout()
@@ -200,12 +212,16 @@ class LangNeuron:
         set1, set2, set3 = data[languages[0]], data[languages[1]], data[languages[2]]
         venn = venn3([set1, set2, set3], set_labels=languages)
         venn3_circles([set1, set2, set3])
-        plt.title(f'Neurons Overlap Between Languages ({languages}) for {self.model_name}')
+        tokens = {k: v for k, v in token_repr_map[self.model_name].items() if k in languages}
+        lang_repr = {k: v for k, v in lang_repr_map[self.model_name].items() if k in languages}
+        title = f'{self.model_name}: Neurons Overlap Between Languages ({languages}) \n' + f'Tokens seen (in M): {tokens}\n' + f'Lang repr: {lang_repr}'
+            
+        plt.title(title, wrap=True)
         save_path = Path(self.lang_neuron_path.parent, f'neuron_overlap_{"_".join(languages)}.png')
         plt.savefig(str(save_path), format='png', dpi=300)
         plt.clf()
     
-def main(model_name: str, lang_set: str, lang_triplet: List[str], device: torch.device) -> None:
+def main(model_name: str, lang_set: str, device: torch.device) -> None:
     lang_neuron_config = {
         "lang_set": lang_set,
         "lang_neuron_frac": 0.01,
@@ -215,7 +231,8 @@ def main(model_name: str, lang_set: str, lang_triplet: List[str], device: torch.
     lang_neuron.get_layerwise_neurons_dist(is_plot=True)
     lang_neuron.get_lang_specific_neurons_dist(is_plot=True)
     lang_neuron.get_neurons_overlap(is_plot=True)
-    # print(lang_neuron.plot_3_lang_overlap_venn(languages=lang_triplet))
+    for lang_triplet in lang_triplet_map[lang_set]:
+        lang_neuron.plot_3_lang_overlap_venn(languages=lang_triplet)
     
 if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
@@ -225,7 +242,5 @@ if __name__ == "__main__":
     
     for model_key in ["sarvam"]:
         for lang_set in ["set1", "set2", "set3", "set4"]:
-            # for lang_triplet in lang_triplet_map[lang_set]:
-            main(model_name=models_map[model_key], lang_set=lang_set, lang_triplet=None, device=device)
+            main(model_name=models_map[model_key], lang_set=lang_set, device=device)
             print(f"Model: {model_key}, Lang set: {lang_set} done!")
-    

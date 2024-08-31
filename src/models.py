@@ -6,6 +6,7 @@ from typing import List, Tuple, Union
 import pandas as pd
 from dataset import WikipediaDataset
 from abc import ABC, abstractmethod
+from utils import models_map
 
 class AbstractModelForProbing(ABC, torch.nn.Module):
     def __init__(self, device: torch.device, model_name: str, model: torch.nn.Module, tokenizer: Union[AutoTokenizer, None]):
@@ -160,7 +161,7 @@ def get_tokenizer_and_model(model_name: Union[str, None], device: torch.device) 
             model = LlamaModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
         elif "bloom" in model_name.lower():
             model = BloomModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
-        elif "mistral-7b" in model_name.lower():
+        elif "mistral" in model_name.lower():
             model = MistralModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
         elif "sarvam" in model_name.lower():
             model = SarvamModelForProbing(tokenizer=tokenizer, device=device, model_name=model_name)
@@ -174,7 +175,7 @@ def get_tokenizer_and_model(model_name: Union[str, None], device: torch.device) 
         
 def main(model_name: str, device: torch.device) -> None:
     tokenizer, model = get_tokenizer_and_model(model_name=model_name, device=device)
-    ds = WikipediaDataset(tokenizer=tokenizer, lang="en", max_context_len=512)
+    ds = WikipediaDataset(model_name=model_name, lang="en", max_context_len=512)
     dl = ds.prepare_dataloader(batch_size=4, frac=0.001)
     input_dict = next(iter(dl))
     n = 1000
@@ -189,10 +190,11 @@ def main(model_name: str, device: torch.device) -> None:
     print(out["logits"].sum())  
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models_dict["bloomz-mt-pt"], device=device)
+    main(models_map["mistral-nemo"], device=device)
+    
     

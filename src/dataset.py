@@ -78,7 +78,7 @@ def main(model_name: str):
         print(ds.tokens_count/10**6)
 
 if __name__ == "__main__":
-    ml = ["llama2-pt", "llama3-pt", "mistral-pt", "bloom-pt", "bloomz-pt", "bloomz-mt-pt", "sarvam-pt", "aya23-ft", "aya101-ft", "llama2-ft", "llama3-ft", "mistral-ft"]
-    for model_key in [ml[4]]:
+    ml = ["mistral-nemo"]
+    for model_key in ml:
         main(model_name=models_map[model_key])
         print(f"Model: {model_key} done!")
