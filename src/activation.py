@@ -54,7 +54,7 @@ def main(model_name: str, device: torch.device) -> None:
     tokenizer, model = get_tokenizer_and_model(model_name=model_name, device=device)
     max_context_len = 512
     batch_size = 4
-    for lang in ["ja", "zh"]:
+    for lang in ["hi", "ta", "te", "ur"]:
         dataset = WikipediaDataset(model_name=model_name, lang=lang, max_context_len=max_context_len)   
         act = Activation(model=model, model_name=model_name, dataset=dataset, lang=lang)
         data_frac = 1.0 if dataset.tokens_count < 75*10**5 else 0.75
