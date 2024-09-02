@@ -73,10 +73,11 @@ class WikipediaDataset(Dataset):
         return dl
 
 class XNLIDataset(Dataset):
-    def __init__(self, model_name: str, lang: str, max_context_len: int, is_train: bool) -> None:
+    def __init__(self, model_name: str, lang: str, max_context_len: int, frac: float, is_train: bool) -> None:
         super(XNLIDataset, self).__init__()
         self.cwd = Path.cwd()
         self.lang = lang
+        self.frac = frac
         self.is_train = is_train
         self.model_name = model_name.split("/")[-1]
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -85,13 +86,12 @@ class XNLIDataset(Dataset):
         self.Tmax = max_context_len
         self.ds = self.get_dataset()
         
-    def info(self) -> str:
-        return f"[INFO] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    
     def get_dataset(self) -> Dataset:
-        ds = load_dataset("xnli", self.lang)
+        ds_dict = load_dataset("xnli", self.lang)
         key = "train" if self.is_train else "test"
-        shuffled_ds = ds[key].shuffle(seed=42)
+        ds = ds_dict[key]
+        size = int(len(ds) * self.frac)
+        shuffled_ds = ds.shuffle().select(range(size))
         return shuffled_ds
     
     def __len__(self) -> int:
@@ -105,7 +105,8 @@ class XNLIDataset(Dataset):
         outputs["seq_len"] = outputs["attention_mask"].sum().item()
         return (outputs, label)
     
-    def collate_function(self, data: List[Tuple[dict, torch.tensor]]) -> dict:
+    @staticmethod
+    def collate_function(data: List[Tuple[dict, torch.tensor]]) -> dict:
         input_ids_list = []
         attention_mask_list = []
         seq_len_list = []
@@ -124,10 +125,8 @@ class XNLIDataset(Dataset):
         labels = torch.stack(label_list, dim=0) # (b,)
         return {"input_ids": input_ids, "labels": labels, "attention_mask": attention_mask}
     
-    def prepare_dataloader(self, batch_size: int, frac: float) -> DataLoader:
-        indices = list(range(0, int(len(self) * frac)))
-        subset = Subset(self, indices=indices)
-        dl = DataLoader(subset, batch_size=batch_size, shuffle=self.is_train, collate_fn=self.collate_function, drop_last=True)
+    def prepare_dataloader(self, batch_size: int) -> DataLoader:
+        dl = DataLoader(self, batch_size=batch_size, shuffle=self.is_train, collate_fn=XNLIDataset.collate_function, drop_last=True)
         return dl
 
 def main_wiki(model_name: str):
