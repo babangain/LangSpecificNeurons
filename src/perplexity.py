@@ -158,12 +158,12 @@ def main(model_name: str, lang_set: str, device: torch.device) -> None:
     ppx = Perplexity(device=device, tokenizer=tokenizer, model=model, model_name=model_name, ppx_config=ppx_config)
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    for model_key in ["aya23"]:
+    for model_key in ["mistral-nemo"]:
         for lang_set in ["set3", "set1", "set2", "set4"]:
             main(model_name=models_map[model_key], lang_set=lang_set, device=device)
             print(f"Model: {model_key}, Lang set: {lang_set} done!")
