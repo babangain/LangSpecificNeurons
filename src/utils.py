@@ -20,6 +20,7 @@ models_map = {
     "bloomz": "bigscience/bloomz-7b1", # Done
     "sarvam": "sarvamai/sarvam-2b-v0.5", # Done
     "aya23": "CohereForAI/aya-23-8B",
+    "aya101": "CohereForAI/aya-101"
 }
 
 token_repr_map = {
@@ -28,7 +29,7 @@ token_repr_map = {
     "bloomz-7b1": {"en": "75", "fr": "75", "es": "75", "vi": "75", "id": "75", "ja": "75", "zh": "75", "bn": "67", "hi": "52", "ta": "52", "te": "52", "mr": "18", "ur": "45", "kn": "30", "ml": "37", "pa": "18"},
     "sarvam-2b-v0.5": {"en": "75", "fr": "75", "es": "75", "vi": "75", "id": "75", "ja": "75", "zh": "75", "bn": "75", "hi": "37", "ta": "67", "te": "67", "mr": "22", "ur": "75", "kn": "37", "ml": "45", "pa": "22"},
     "aya-23-8B": {"en": "75", "fr": "75", "es": "75", "vi": "75", "id": "75", "ja": "75", "zh": "75", "bn": "75", "hi": "75", "ta": "60", "te": "75", "mr": "30", "ur": "60", "kn": "41", "ml": "45", "pa": "30"},
-    "Mistral-Nemo-Base-2407": {"en": "75", "fr": "75", "es": "75", "vi": "75", "id": "75", "ja": "75", "zh": "75", "bn": "75", "hi": "75", "ta": "75", "te": "75", "mr": "75", "ur": "75", "kn": "75", "ml": "75", "pa": "75"}
+    "Mistral-Nemo-Base-2407": {"en": "75", "fr": "75", "es": "75", "vi": "75", "id": "75", "ja": "75", "zh": "75", "bn": "75", "hi": "75", "ta": "75", "te": "75", "mr": "37", "ur": "60", "kn": "55", "ml": "67", "pa": "37"}
 }
 
 lang_repr_map = {

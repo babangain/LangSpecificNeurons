@@ -4,3 +4,5 @@ data
 __pycache__
 *.out
 *tmp*
+wandb
+outputs/ckpt
