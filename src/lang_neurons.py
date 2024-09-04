@@ -240,7 +240,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    for model_key in ["mistral-nemo"]:
+    for model_key in ["aya101"]:
         for lang_set in ["set1", "set2", "set3", "set4"]:
             main(model_name=models_map[model_key], lang_set=lang_set, device=device)
             print(f"Model: {model_key}, Lang set: {lang_set} done!")

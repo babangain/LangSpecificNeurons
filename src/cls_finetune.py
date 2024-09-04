@@ -1,4 +1,4 @@
-import wandb, torch, tqdm, sys, os, json, math
+import wandb, torch, tqdm, sys, os, json, math, gc
 from pathlib import Path
 sys.path.append(Path(__file__).parent.parent.__str__())
 from typing import List, Tuple, Union, Any
@@ -16,6 +16,8 @@ class LoRAFineTuner:
         self.lang = config["lang"]
         self.num_epochs = config["num_epochs"]
         self.wandb_log = config["wandb_log"]
+        self.calc_norm = config["calc_norm"]
+        self.acc_grad_steps = config["acc_grad_steps"]
         self.project_name = f"{self.model_name_srt}-finetune-XNLI-{self.lang}"
         self.checkpoint_dir = Path(Path.cwd(), f"outputs/ckpt/{self.project_name}")
         
@@ -24,7 +26,7 @@ class LoRAFineTuner:
         self.val_ds = XNLIDataset(model_name=config["model_name"], lang=self.lang, max_context_len=self.config["max_seq_len"], frac=self.config["val_frac"], is_train=False)
         self.train_dl = self.train_ds.prepare_dataloader(batch_size=self.config["batch_size"])
         self.val_dl = self.val_ds.prepare_dataloader(batch_size=self.config["batch_size"])
-        self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.config["initial_learning_rate"], weight_decay=self.config["weight_decay"])
+        self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.config["initial_learning_rate"], weight_decay=self.config["weight_decay"], betas=(0.95, 0.99))
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, T_0=1, eta_min=1e-8)
         
         if self.wandb_log:
@@ -35,6 +37,23 @@ class LoRAFineTuner:
             wandb.define_metric("train/*", step_metric="train/step")
             wandb.define_metric("val/*", step_metric="val/step")
     
+    def print_cuda_memory_usage(self, step_description=""):
+        print(f"\n--- {step_description} ---")
+        print(f"Allocated Memory: {torch.cuda.memory_allocated() / (1024 ** 3):.2f} GB")
+        print(f"Reserved Memory: {torch.cuda.memory_reserved() / (1024 ** 3):.2f} GB")
+        print(f"Max Allocated Memory: {torch.cuda.max_memory_allocated() / (1024 ** 3):.2f} GB")
+        print(f"Max Reserved Memory: {torch.cuda.max_memory_reserved() / (1024 ** 3):.2f} GB")
+
+        gpu_tensors = []
+        for obj in gc.get_objects():
+            if torch.is_tensor(obj):
+                if obj.device.type == 'cuda':
+                    gpu_tensors.append(obj)
+        size = 0
+        for tensor in gpu_tensors:
+            size += tensor.numel() * tensor.element_size() / 1024**3
+        print(f"Occupied Memory by Tensors: {size:.2f} GB\n")
+
     def _find_norm(self, is_grad: bool) -> float:
         norm = 0
         for val in self.model.parameters():
@@ -64,6 +83,8 @@ class LoRAFineTuner:
             self.model.eval()
             with torch.no_grad():
                 out = self.model(input_ids=input_ids, attention_mask=attention_mask)
+        
+        del input_ids, attention_mask, labels
         return out # (b, c)
         
     def _calc_loss_batch(self, pred_outputs: torch.tensor, true_outputs: torch.tensor) -> torch.tensor:
@@ -72,6 +93,7 @@ class LoRAFineTuner:
         assert pred_outputs.dim() == 2, f"pred_outputs.shape = {pred_outputs.shape} must be (b, c)"
         assert true_outputs.dim() == 1, f"true_outputs.shape = {true_outputs.shape} must be (b,)"
         loss = torch.nn.functional.cross_entropy(input=pred_outputs, target=true_outputs)
+        del pred_outputs, true_outputs
         return loss # returns the computational graph also along with it
         
     def _calc_acc_batch(self, pred_outputs: torch.tensor, true_outputs: torch.tensor) -> torch.tensor:
@@ -80,46 +102,62 @@ class LoRAFineTuner:
         assert pred_outputs.dim() == 2, f"pred_outputs.shape = {pred_outputs.shape} must be (b, c)"
         assert true_outputs.dim() == 1, f"true_outputs.shape = {true_outputs.shape} must be (b,)"
         acc = (pred_outputs.argmax(dim=-1) == true_outputs).to(torch.float32).mean()
+        del pred_outputs, true_outputs
         return torch.tensor(acc.item()) # returns the tensor as a scalar number
 
-    def _optimize_batch(self, batch: dict) -> Tuple[float, float]:  
+    def _optimize_batch(self, batch: dict, batch_index: int) -> Tuple[float, float, float, float]:  
         pred_out = self._forward_batch(batch=batch, is_train=True) # (b, c)
         true_out = batch["labels"] # (b,)
-        loss = self._calc_loss_batch(pred_outputs=pred_out, true_outputs=true_out)
+        loss = self._calc_loss_batch(pred_outputs=pred_out, true_outputs=true_out) / self.acc_grad_steps
         acc = self._calc_acc_batch(pred_outputs=pred_out, true_outputs=true_out)
-
-        self.optimizer.zero_grad(set_to_none=True)
-        loss.backward()        
-        torch.nn.utils.clip_grad_norm_(parameters=self.model.parameters(), max_norm=self.config["clip_grad_norm_value"], norm_type=2.0)
-        self.optimizer.step()
-        return loss.item(), acc.item()
+        loss.backward()      
+        
+        gn = self._find_norm(True) if self.calc_norm else -1
+        pn = self._find_norm(False) if self.calc_norm else -1 
+        if (batch_index+1) % self.acc_grad_steps == 0:
+            torch.nn.utils.clip_grad_norm_(parameters=self.model.parameters(), max_norm=self.config["clip_grad_norm_value"], norm_type=2.0)
+            self.optimizer.step()
+            self.optimizer.zero_grad(set_to_none=True)
+        
+        del pred_out, true_out
+        return loss.item(), acc.item(), gn, pn
     
     def _optimize_dataloader(self, ep: int) -> None:  
         num_steps = len(self.train_dl)
         with tqdm.tqdm(iterable=self.train_dl, desc=f"[TRAIN] ep: {ep}/{self.num_epochs-1}", total=num_steps, unit="step", colour="green") as pbar:
+            loss1, acc1, gn1, pn1, lr1 = 0, 0, 0, 0, 0
             for i, batch in enumerate(pbar):           
-                loss, acc = self._optimize_batch(batch=batch)
+                loss, acc, gn, pn = self._optimize_batch(batch=batch, batch_index=i)
+                loss1 += loss
+                acc1 += acc
+                gn1 += gn
+                pn1 += pn
                 self.scheduler.step(ep + i/num_steps)
-                lr = self.optimizer.param_groups[0]['lr']
-                # gn = self._find_norm(True)
-                # pn = self._find_norm(False)
-                if self.wandb_log:
-                    wandb.log({"train/loss": loss, "train/accuracy": acc, "train/learning_rate": lr, "train/epoch": ep, "train/step": self.train_step})
-                pbar.set_postfix({"loss": f"{loss:.3f}", "acc": f"{acc:.3f}", "lr": f"{lr:.3e}"})
-                self.train_step += 1
+                lr1 += self.optimizer.param_groups[0]['lr']
+                if self.wandb_log and ((i+1) % self.acc_grad_steps == 0):
+                    wandb.log({"train/loss": loss1 / self.acc_grad_steps, "train/accuracy": acc1 / self.acc_grad_steps, "train/learning_rate": lr1 / self.acc_grad_steps, "train/grad_norm": gn1 / self.acc_grad_steps, "train/param_norm": pn1 / self.acc_grad_steps, "train/epoch": ep, "train/step": self.train_step})
+                    self.train_step += 1
+                    pbar.set_postfix({"loss": f"{loss1:.3f}", "acc": f"{acc1:.3f}", "lr": f"{lr1:.3e}", "gn": f"{gn1:.3f}", "pn": f"{pn1:.3f}"})
+                    loss1, acc1, gn1, pn1, lr1 = 0, 0, 0, 0, 0
+                    torch.cuda.empty_cache()
+                self.print_cuda_memory_usage(f"[TRAIN] After batch {i}/{num_steps-1}")
     
     def _validate_dataloader(self, ep: int) -> None:
-        with tqdm.tqdm(iterable=self.val_dl, desc=f"[VAL] ep: {ep}/{self.num_epochs-1}", total=len(self.val_dl), unit="batch", colour="green") as pbar:
-            for batch in pbar:  
+        num_steps = len(self.val_dl)
+        with tqdm.tqdm(iterable=self.val_dl, desc=f"[VAL] ep: {ep}/{self.num_epochs-1}", total=num_steps, unit="batch", colour="green") as pbar:
+            loss, acc = 0, 0
+            for i, batch in enumerate(pbar):  
                 pred_out = self._forward_batch(batch=batch, is_train=False)
                 true_out = batch["labels"]
-                loss = self._calc_loss_batch(pred_outputs=pred_out, true_outputs=true_out).item()
-                acc = self._calc_acc_batch(pred_outputs=pred_out, true_outputs=true_out).item()
-                if self.wandb_log: 
-                    wandb.log({"val/loss": loss, "val/accuracy": acc, "val/epoch": ep, "val/step": self.val_step})
-                pbar.set_postfix({"loss": f"{loss:.3f}", "acc": f"{acc:.3f}"})
-                self.val_step += 1
-        torch.cuda.empty_cache()
+                loss += self._calc_loss_batch(pred_outputs=pred_out, true_outputs=true_out).item()
+                acc += self._calc_acc_batch(pred_outputs=pred_out, true_outputs=true_out).item()
+                if self.wandb_log and ((i+1) % self.acc_grad_steps == 0): 
+                    wandb.log({"val/loss": loss / self.acc_grad_steps, "val/accuracy": acc / self.acc_grad_steps, "val/epoch": ep, "val/step": self.val_step})
+                    self.val_step += 1
+                    pbar.set_postfix({"loss": f"{loss / self.acc_grad_steps:.3f}", "acc": f"{acc / self.acc_grad_steps:.3f}"})
+                    loss, acc = 0, 0
+                    torch.cuda.empty_cache()
+                self.print_cuda_memory_usage(f"[VAL] After batch {i}/{num_steps-1}")
        
     def train(self) -> None:
         self.model.calc_num_lora_params()
@@ -131,29 +169,30 @@ class LoRAFineTuner:
             self._save_checkpoint(ep=ep)
         if self.wandb_log:
             wandb.finish()
-    
+
 def main(model_name: str, device: torch.device) -> None:
     config = {
         "model_name": model_name,
         "lang": "en",
-        "num_epochs": 5,
-        "batch_size": 8,
+        "num_epochs": 2, # 3 epoch for en and 1 epoch for vi
+        "batch_size": 16,
         "max_seq_len": 512,
-        "train_frac": 0.5,
-        "val_frac": 0.5,
+        "train_frac": 0.001,
+        "val_frac": 0.05,
         "num_class": 3,
         "lora_rank": 8,
         "lora_alpha": 16,
-        "clip_grad_norm_value": 5.0,
-        "initial_learning_rate": 1e-3,
-        "weight_decay": 0.01,
-        "wandb_log": True
+        "clip_grad_norm_value": 2.0,
+        "initial_learning_rate": 1e-5, # start at 1e-6 and go to e-9
+        "weight_decay": 0.1, # 0.01
+        "calc_norm": True,
+        "wandb_log": False
     }
     trainer = LoRAFineTuner(device=device, config=config)
     trainer.train()
 
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")

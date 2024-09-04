@@ -143,7 +143,7 @@ def main_xnli(model_name: str):
     print([v.shape for k, v in a.items()])
 
 if __name__ == "__main__":
-    ml = ["llama2"]
+    ml = ["aya101"]
     for model_key in ml:
-        main_xnli(model_name=models_map[model_key])
+        main_wiki(model_name=models_map[model_key])
         print(f"Model: {model_key} done!")
