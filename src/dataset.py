@@ -92,18 +92,27 @@ class XNLIDataset(Dataset):
         ds = ds_dict[key]
         size = int(len(ds) * self.frac)
         shuffled_ds = ds.shuffle().select(range(size))
-        return shuffled_ds
+        dsl = [shuffled_ds[i] for i in range(len(shuffled_ds))]
+        
+        filter_dsl = []
+        with tqdm.tqdm(iterable=range(len(dsl)), desc="Preparing dataset...", unit="example", colour="green") as pbar:
+            for index in pbar:
+                inputs = [dsl[index]["premise"] + f" {self.tokenizer.eos_token} " + dsl[index]["hypothesis"]]
+                outputs = self.tokenizer(inputs, padding="max_length", truncation=True, max_length=512, return_tensors="pt") # (1, Tmax)
+                label = torch.tensor([dsl[index]["label"]]) # (1,)
+                outputs["seq_len"] = outputs["attention_mask"].sum().item()
+                if outputs["seq_len"] < self.Tmax:
+                    outputs["input_ids"] = outputs["input_ids"][:, :self.Tmax]
+                    outputs["attention_mask"] = outputs["attention_mask"][:, :self.Tmax]
+                    filter_dsl.append((outputs, label))
+        return filter_dsl
     
     def __len__(self) -> int:
         return len(self.ds)
     
     def __getitem__(self, index: int) -> Tuple[dict, torch.tensor]:
         assert index < len(self) and index >= 0, f"Index must be in between 0 to {len(self)-1}"
-        inputs = [self.ds[index]["premise"] + f" {self.tokenizer.eos_token} " + self.ds[index]["hypothesis"]]
-        outputs = self.tokenizer(inputs, padding="max_length", truncation=True, max_length=self.Tmax, return_tensors="pt") # (1, Tmax)
-        label = torch.tensor([self.ds[index]["label"]]) # (1,)
-        outputs["seq_len"] = outputs["attention_mask"].sum().item()
-        return (outputs, label)
+        return self.ds[index]
     
     @staticmethod
     def collate_function(data: List[Tuple[dict, torch.tensor]]) -> dict:
@@ -111,13 +120,9 @@ class XNLIDataset(Dataset):
         attention_mask_list = []
         seq_len_list = []
         label_list = []
-        
-        for x, _ in data:
-            seq_len_list.append(x["seq_len"])
-        max_seq_len_batch = max(seq_len_list)
         for x, y in data:
-            input_ids_list.append(x["input_ids"][0, :max_seq_len_batch])
-            attention_mask_list.append(x["attention_mask"][0, :max_seq_len_batch])
+            input_ids_list.append(x["input_ids"][0, :])
+            attention_mask_list.append(x["attention_mask"][0, :])
             label_list.append(y[0])
         
         input_ids = torch.stack(input_ids_list, dim=0) # (b, Tmax)
@@ -135,15 +140,12 @@ def main_wiki(model_name: str):
         print(ds.tokens_count/10**6)
 
 def main_xnli(model_name: str):
-    ds = XNLIDataset(model_name=model_name, lang="fr", max_context_len=512, is_train=True)
-    dl = ds.prepare_dataloader(32, frac=1)
-    print(len(dl))
-    a = dl.__iter__().__next__()
-    print(a)
-    print([v.shape for k, v in a.items()])
+    ds = XNLIDataset(model_name=model_name, lang="fr", max_context_len=256, frac=0.33, is_train=True)
+    print(len(ds))
+    print("DONE")
 
 if __name__ == "__main__":
     ml = ["aya101"]
     for model_key in ml:
-        main_wiki(model_name=models_map[model_key])
+        main_xnli(model_name=models_map[model_key])
         print(f"Model: {model_key} done!")
