@@ -3,7 +3,7 @@ from pathlib import Path
 sys.path.append(Path(__file__).parent.parent.__str__())
 from typing import List, Tuple, Union, Any
 from dataset import XNLIDataset
-from models import ModelForCLSWithLoRA
+from lora_models import ModelForCLSWithLoRA
 from utils import models_map
 from datasets import load_dataset
 from torch.utils.data import Dataset
@@ -21,7 +21,7 @@ class LoRAFineTuner:
         self.project_name = f"{self.model_name_srt}-finetune-XNLI-{self.lang}"
         self.checkpoint_dir = Path(Path.cwd(), f"outputs/ckpt/{self.project_name}")
         
-        self.model = ModelForCLSWithLoRA(device=self.device, model_name=config["model_name"], num_class=self.config["num_class"], lora_rank=self.config["lora_rank"], lora_alpha=self.config["lora_alpha"]).to(self.device)
+        self.model = ModelForCLSWithLoRA(device=self.device, model_name=self.config["model_name"], num_class=self.config["num_class"], lora_rank=self.config["lora_rank"], lora_alpha=self.config["lora_alpha"]).to(self.device)
         self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.config["initial_learning_rate"], weight_decay=self.config["weight_decay"], betas=(0.95, 0.99))
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, T_0=1, eta_min=1e-8)
         
