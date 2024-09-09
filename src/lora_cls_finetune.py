@@ -3,7 +3,7 @@ from pathlib import Path
 sys.path.append(Path(__file__).parent.parent.__str__())
 from typing import List, Tuple, Union, Any
 from dataset import XNLIDataset
-from models import ModelForCLSWithLoRA
+from lora_models import ModelForCLSWithLoRA
 from utils import models_map
 from datasets import load_dataset
 from torch.utils.data import Dataset
@@ -21,9 +21,14 @@ class LoRAFineTuner:
         self.project_name = f"{self.model_name_srt}-finetune-XNLI-{self.lang}"
         self.checkpoint_dir = Path(Path.cwd(), f"outputs/ckpt/{self.project_name}")
         
-        self.model = ModelForCLSWithLoRA(device=self.device, model_name=config["model_name"], num_class=self.config["num_class"], lora_rank=self.config["lora_rank"], lora_alpha=self.config["lora_alpha"]).to(self.device)
+        self.train_ds = XNLIDataset(model_name=self.config["model_name"], lang=self.lang, max_context_len=self.config["max_seq_len"], frac=self.config["train_frac"], is_train=True)
+        self.val_ds = XNLIDataset(model_name=self.config["model_name"], lang=self.lang, max_context_len=self.config["max_seq_len"], frac=self.config["val_frac"], is_train=False)
+        self.train_dl = self.train_ds.prepare_dataloader(batch_size=self.config["batch_size"])
+        self.val_dl = self.val_ds.prepare_dataloader(batch_size=self.config["batch_size"])
+        
+        self.model = ModelForCLSWithLoRA(device=self.device, model_name=self.config["model_name"], num_class=self.config["num_class"], lora_rank=self.config["lora_rank"], lora_alpha=self.config["lora_alpha"]).to(self.device)
         self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.config["initial_learning_rate"], weight_decay=self.config["weight_decay"], betas=(0.95, 0.99))
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, T_0=1, eta_min=1e-9)
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, T_0=1, eta_min=1e-8)
         
         if self.wandb_log:
             wandb.init(project=self.project_name, config=config)
@@ -54,12 +59,19 @@ class LoRAFineTuner:
         norm = 0
         for val in self.model.parameters():
             if val.requires_grad:
-                norm += ((val.grad if is_grad else val) ** 2).sum().item()
-        norm = norm ** 0.5   
+                if is_grad:
+                    k = val
+                else:
+                    k = val.grad if val.grad is not None else torch.tensor(0.0, device=self.device)
+                norm += (k ** 2).sum().item()
+        norm = norm ** 0.5  
         return norm
     
     def _save_checkpoint(self, ep: int) -> None:
-        checkpoint = {"epoch": ep, "model_state": self.model.state_dict(), "opt_state": self.optimizer.state_dict()}   
+        checkpoint = {"epoch": ep, 
+                      "model_state": self.model.state_dict(), 
+                      "opt_state": self.optimizer.state_dict(),
+                      "config": self.config}   
         if not Path.exists(self.checkpoint_dir):
             Path.mkdir(self.checkpoint_dir, parents=True, exist_ok=True)
         checkpoint_path = Path(self.checkpoint_dir, f"ckpt_ep_{ep}.pth")
@@ -79,8 +91,6 @@ class LoRAFineTuner:
             self.model.eval()
             with torch.no_grad():
                 out = self.model(input_ids=input_ids, attention_mask=attention_mask)
-        
-        del input_ids, attention_mask, labels
         return out # (b, c)
         
     def _calc_loss_batch(self, pred_outputs: torch.tensor, true_outputs: torch.tensor) -> torch.tensor:
@@ -89,7 +99,6 @@ class LoRAFineTuner:
         assert pred_outputs.dim() == 2, f"pred_outputs.shape = {pred_outputs.shape} must be (b, c)"
         assert true_outputs.dim() == 1, f"true_outputs.shape = {true_outputs.shape} must be (b,)"
         loss = torch.nn.functional.cross_entropy(input=pred_outputs, target=true_outputs)
-        del pred_outputs, true_outputs
         return loss # returns the computational graph also along with it
         
     def _calc_acc_batch(self, pred_outputs: torch.tensor, true_outputs: torch.tensor) -> torch.tensor:
@@ -98,7 +107,6 @@ class LoRAFineTuner:
         assert pred_outputs.dim() == 2, f"pred_outputs.shape = {pred_outputs.shape} must be (b, c)"
         assert true_outputs.dim() == 1, f"true_outputs.shape = {true_outputs.shape} must be (b,)"
         acc = (pred_outputs.argmax(dim=-1) == true_outputs).to(torch.float32).mean()
-        del pred_outputs, true_outputs
         return torch.tensor(acc.item()) # returns the tensor as a scalar number
 
     def _optimize_batch(self, pred_outputs: torch.tensor, true_outputs: torch.tensor, ep: int, batch_index: int) -> Tuple[float, float, float, float]:  
@@ -137,9 +145,6 @@ class LoRAFineTuner:
                     pbar.set_postfix({"loss_avg": f"{loss_avg:.3f}", "acc_avg": f"{acc_avg:.3f}", "lr": f"{lr:.3e}", "gn": f"{gn:.3f}", "pn": f"{pn:.3f}"})
                 else:
                     pbar.set_postfix({"loss": f"{loss:.3f}", "acc": f"{acc:.3f}", "lr": f"{lr:.3e}", "gn": f"{gn:.3f}", "pn": f"{pn:.3f}"})                        
-                
-                del pred_out, true_out
-                self.print_cuda_memory_usage(f"[TRAIN] After batch {i}/{len(self.train_dl)-1}")
     
     def _validate_dataloader(self, ep: int) -> None:
         with tqdm.tqdm(iterable=self.val_dl, desc=f"[VAL] ep: {ep}/{self.num_epochs-1}", total=len(self.val_dl), unit="step", colour="green") as pbar:
@@ -162,52 +167,50 @@ class LoRAFineTuner:
                     pbar.set_postfix({"loss_avg": f"{loss_avg:.3f}", "acc_avg": f"{acc_avg:.3f}"})
                 else:
                     pbar.set_postfix({"loss": f"{loss:.3f}", "acc": f"{acc:.3f}"})                        
-                
-                del pred_out, true_out
-                self.print_cuda_memory_usage(f"[VAL] After batch {i}/{len(self.val_dl)-1}")
     
     def train(self) -> None:
         self.model.calc_num_lora_params()
         self.train_step = 0
         self.val_step = 0
         for ep in range(self.num_epochs):
-            train_ds = XNLIDataset(model_name=self.config["model_name"], lang=self.lang, max_context_len=self.config["max_seq_len"], frac=self.config["train_frac"], is_train=True)
-            val_ds = XNLIDataset(model_name=self.config["model_name"], lang=self.lang, max_context_len=self.config["max_seq_len"], frac=self.config["val_frac"], is_train=False)
-            self.train_dl = train_ds.prepare_dataloader(batch_size=self.config["batch_size"])
-            self.val_dl = val_ds.prepare_dataloader(batch_size=self.config["batch_size"])
-            del train_ds, val_ds
-            
             self._optimize_dataloader(ep=ep)
             self._validate_dataloader(ep=ep)
             self._save_checkpoint(ep=ep)
-        
         if self.wandb_log:
             wandb.finish()
+    
+    def _load_checkpoint(self, name: str = "ckpt_ep_0.pth") -> None:
+        checkpoint_path = Path(self.checkpoint_dir, name)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        self.model.load_state_dict(checkpoint["model_state"])
+        self.optimizer.load_state_dict(checkpoint["opt_state"])
+        print(f"[LOAD] ep: {checkpoint['epoch']}, checkpoint loaded from: {checkpoint_path}")
 
 def main(model_name: str, device: torch.device) -> None:
     config = {
         "model_name": model_name,
-        "lang": "en",
-        "num_epochs": 3, 
+        "lang": "vi",
+        "num_epochs": 1, 
         "batch_size": 4,
-        "max_seq_len": 512,
-        "train_frac": 0.3,
-        "val_frac": 0.3,
+        "max_seq_len": 256,
+        "train_frac": 0.2,
+        "val_frac": 0.2,
         "num_class": 3,
         "lora_rank": 8,
         "lora_alpha": 16,
         "clip_grad_norm_value": 2.0,
-        "initial_learning_rate": 1e-6, 
-        "weight_decay": 0.01,
+        "initial_learning_rate": 1e-5, 
+        "weight_decay": 0.1,
         "acc_grad_steps": 16,
         "calc_norm": True,
         "wandb_log": True
     }
     trainer = LoRAFineTuner(device=device, config=config)
     trainer.train()
+    print("DONE")
 
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
