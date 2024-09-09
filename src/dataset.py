@@ -131,7 +131,7 @@ class XNLIDataset(Dataset):
         return {"input_ids": input_ids, "labels": labels, "attention_mask": attention_mask}
     
     def prepare_dataloader(self, batch_size: int) -> DataLoader:
-        dl = DataLoader(self, batch_size=batch_size, shuffle=self.is_train, collate_fn=XNLIDataset.collate_function, drop_last=True)
+        dl = DataLoader(self, batch_size=batch_size, shuffle=self.is_train, collate_fn=XNLIDataset.collate_function, drop_last=True, num_workers=4)
         return dl
 
 def main_wiki(model_name: str):
