@@ -162,7 +162,7 @@ class AbstractModelForProbing(ABC, torch.nn.Module):
             self.register_hook(intervene_config=intervene_config)
             if self.model_type == "ed":
                 decoder_input_ids = input_ids[:, :-1]  # Shifting input IDs by one 
-                prediction_output = self.model(input_ids=input_ids, attention_mask=attention_mask, decoder_input_ids=decoder_input_ids).logits.cpu() # (b, T, d)
+                prediction_output = self.model(input_ids=input_ids, attention_mask=attention_mask, decoder_input_ids=decoder_input_ids).logits.cpu() # (b, T-1, d)
             elif self.model_type == "d":
                 prediction_output = self.model(input_ids=input_ids, attention_mask=attention_mask).logits.cpu() # (b, T, d)
             else:

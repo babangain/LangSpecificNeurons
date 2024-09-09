@@ -75,8 +75,7 @@ class Perplexity:
             for input_dict in pbar:
                 out_dict = self.model(input_dict["input_ids"], input_dict["attention_mask"], intervene_config=intervene_config)
                 logits1 = out_dict["logits"] # (b, Tmax, V) 
-                target_ids1 = input_dict["target_ids"] # (b, Tmax)
-                
+                target_ids1 = input_dict["target_ids"][:,:-1] if self.model_name == "aya-101" else input_dict["target_ids"] # (b, Tmax)
                 logits = logits1.flatten(start_dim=0, end_dim=1).to(self.device) # (b*Tmax, V)
                 target_ids = target_ids1.flatten().to(self.device) # (b*Tmax,)
                 loss = torch.nn.functional.cross_entropy(logits, target_ids, reduction="mean") # scalar
@@ -153,12 +152,12 @@ def main(model_name: str, lang_set: str, device: torch.device) -> None:
         "max_context_len": 512,
         "batch_size": 4,
         "lang_set": lang_set,
-        "data_frac": 0.001
+        "data_frac": 0.0001
     }
     ppx = Perplexity(device=device, tokenizer=tokenizer, model=model, model_name=model_name, ppx_config=ppx_config)
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
