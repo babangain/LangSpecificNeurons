@@ -84,13 +84,13 @@ class LoRAFineTuner:
         labels = batch["labels"].to(self.device) # (b, T)
         if is_train:
             self.model.train()
-            out = self.model(input_ids=input_ids, attention_mask=attention_mask)
+            out = self.model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None)
             out.requires_grad_(True)
             assert out.requires_grad == True
         else:
             self.model.eval()
             with torch.no_grad():
-                out = self.model(input_ids=input_ids, attention_mask=attention_mask)
+                out = self.model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None)
         return out # (b, c)
         
     def _calc_loss_batch(self, pred_outputs: torch.tensor, true_outputs: torch.tensor) -> torch.tensor:

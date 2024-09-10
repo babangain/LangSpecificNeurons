@@ -91,8 +91,8 @@ class XNLIDataset(Dataset):
         key = "train" if self.is_train else "test"
         ds = ds_dict[key]
         size = int(len(ds) * self.frac)
-        shuffled_ds = ds.shuffle().select(range(size))
-        dsl = [shuffled_ds[i] for i in range(len(shuffled_ds))]
+        subset_ds = ds.select(range(size)) # do not apply shuffling
+        dsl = [subset_ds[i] for i in range(len(subset_ds))]
         
         filter_dsl = []
         with tqdm.tqdm(iterable=range(len(dsl)), desc="Preparing dataset...", unit="example", colour="green") as pbar:
@@ -111,7 +111,6 @@ class XNLIDataset(Dataset):
         return len(self.ds)
     
     def __getitem__(self, index: int) -> Tuple[dict, torch.tensor]:
-        assert index < len(self) and index >= 0, f"Index must be in between 0 to {len(self)-1}"
         return self.ds[index]
     
     @staticmethod
@@ -131,7 +130,7 @@ class XNLIDataset(Dataset):
         return {"input_ids": input_ids, "labels": labels, "attention_mask": attention_mask}
     
     def prepare_dataloader(self, batch_size: int) -> DataLoader:
-        dl = DataLoader(self, batch_size=batch_size, shuffle=self.is_train, collate_fn=XNLIDataset.collate_function, drop_last=True, num_workers=4)
+        dl = DataLoader(self, batch_size=batch_size, shuffle=self.is_train, collate_fn=XNLIDataset.collate_function, drop_last=True)
         return dl
 
 def main_wiki(model_name: str):
