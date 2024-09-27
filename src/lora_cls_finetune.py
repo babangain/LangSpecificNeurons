@@ -2,11 +2,12 @@ import wandb, torch, tqdm, sys, os, json, math, gc
 from pathlib import Path
 sys.path.append(Path(__file__).parent.parent.__str__())
 from typing import List, Tuple, Union, Any
-from dataset import XNLIDataset
+from dataset import XNLIDataset, XCOPADataset
 from lora_models import ModelForCLSWithLoRA
 from utils import models_map
 from datasets import load_dataset
 from torch.utils.data import Dataset
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 class LoRAFineTuner:
     def __init__(self, device: torch.device, config: dict):
@@ -18,14 +19,20 @@ class LoRAFineTuner:
         self.wandb_log = config["wandb_log"]
         self.calc_norm = config["calc_norm"]
         self.acc_grad_steps = config["acc_grad_steps"]
-        self.project_name = f"{self.model_name_srt}-finetune-XNLI-{self.lang}"
+        self.project_name = f"{self.model_name_srt}-finetune-{self.config['task_name']}-{self.lang}"
         self.checkpoint_dir = Path(Path.cwd(), f"outputs/ckpt/{self.project_name}")
         
-        self.train_ds = XNLIDataset(model_name=self.config["model_name"], lang=self.lang, max_context_len=self.config["max_seq_len"], frac=self.config["train_frac"], is_train=True)
-        self.val_ds = XNLIDataset(model_name=self.config["model_name"], lang=self.lang, max_context_len=self.config["max_seq_len"], frac=self.config["val_frac"], is_train=False)
+        if self.config["task_name"] == "XNLI":
+            self.train_ds = XNLIDataset(model_name=self.config["model_name"], lang=self.lang, max_context_len=self.config["max_seq_len"], frac=self.config["train_frac"], is_train=True)
+            self.val_ds = XNLIDataset(model_name=self.config["model_name"], lang=self.lang, max_context_len=self.config["max_seq_len"], frac=self.config["val_frac"], is_train=False)
+        elif self.config["task_name"] == "XCOPA":
+            self.train_ds = XCOPADataset(model_name=self.config["model_name"], lang=self.lang, max_context_len=self.config["max_seq_len"], frac=self.config["train_frac"], is_train=True)
+            self.val_ds = XCOPADataset(model_name=self.config["model_name"], lang=self.lang, max_context_len=self.config["max_seq_len"], frac=self.config["val_frac"], is_train=False)
+        else:
+            raise ValueError("Invalid task name!")
+        
         self.train_dl = self.train_ds.prepare_dataloader(batch_size=self.config["batch_size"])
         self.val_dl = self.val_ds.prepare_dataloader(batch_size=self.config["batch_size"])
-        
         self.model = ModelForCLSWithLoRA(device=self.device, model_name=self.config["model_name"], num_class=self.config["num_class"], lora_rank=self.config["lora_rank"], lora_alpha=self.config["lora_alpha"]).to(self.device)
         self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.config["initial_learning_rate"], weight_decay=self.config["weight_decay"], betas=(0.95, 0.99))
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, T_0=1, eta_min=1e-8)
@@ -67,21 +74,23 @@ class LoRAFineTuner:
         norm = norm ** 0.5  
         return norm
     
-    def _save_checkpoint(self, ep: int) -> None:
+    def _save_checkpoint(self, ep: int, is_latest_ckpt: bool) -> None:
         checkpoint = {"epoch": ep, 
                       "model_state": self.model.state_dict(), 
                       "opt_state": self.optimizer.state_dict(),
                       "config": self.config}   
         if not Path.exists(self.checkpoint_dir):
             Path.mkdir(self.checkpoint_dir, parents=True, exist_ok=True)
-        checkpoint_path = Path(self.checkpoint_dir, f"ckpt_ep_{ep}.pth")
+        if is_latest_ckpt:
+            checkpoint_path = Path(self.checkpoint_dir, f"ckpt_ep_latest.pth")
+        else:
+            checkpoint_path = Path(self.checkpoint_dir, f"ckpt_ep_{ep}.pth")            
         torch.save(checkpoint, checkpoint_path)
         print(f"[SAVE] ep: {ep}/{self.num_epochs-1}, checkpoint saved at: {checkpoint_path}")
     
     def _forward_batch(self, batch: dict, is_train: bool) -> torch.tensor:
         input_ids = batch["input_ids"].to(self.device) # (b, T)
         attention_mask = batch["attention_mask"].to(self.device) # (b, T)
-        labels = batch["labels"].to(self.device) # (b, T)
         if is_train:
             self.model.train()
             out = self.model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None)
@@ -175,7 +184,7 @@ class LoRAFineTuner:
         for ep in range(self.num_epochs):
             self._optimize_dataloader(ep=ep)
             self._validate_dataloader(ep=ep)
-            self._save_checkpoint(ep=ep)
+            self._save_checkpoint(ep=ep, is_latest_ckpt=self.config["is_latest_ckpt"])
         if self.wandb_log:
             wandb.finish()
     
@@ -189,19 +198,21 @@ class LoRAFineTuner:
 def main(model_name: str, device: torch.device) -> None:
     config = {
         "model_name": model_name,
-        "lang": "vi",
-        "num_epochs": 1, 
+        "task_name": "XCOPA",
+        "lang": "en",
+        "num_epochs": 5, 
         "batch_size": 4,
         "max_seq_len": 256,
-        "train_frac": 0.2,
-        "val_frac": 0.2,
-        "num_class": 3,
-        "lora_rank": 8,
-        "lora_alpha": 16,
+        "train_frac": 1.0,
+        "val_frac": 1.0,
+        "num_class": 2,
+        "lora_rank": 1,
+        "lora_alpha": 2,
         "clip_grad_norm_value": 2.0,
         "initial_learning_rate": 1e-5, 
         "weight_decay": 0.1,
-        "acc_grad_steps": 16,
+        "acc_grad_steps": 1,
+        "is_latest_ckpt": True,
         "calc_norm": True,
         "wandb_log": True
     }
@@ -210,7 +221,7 @@ def main(model_name: str, device: torch.device) -> None:
     print("DONE")
 
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
