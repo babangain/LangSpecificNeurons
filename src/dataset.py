@@ -150,8 +150,8 @@ class XCOPADataset(Dataset):
     def get_dataset(self) -> Dataset:
         if self.lang == "en":
             ds_dict = load_dataset("pkavumba/balanced-copa")
-            ds_train = ds_dict["train"].select(range(500))
-            ds_test = ds_dict["test"].select(range(100))
+            ds_train = ds_dict["train"]
+            ds_test = ds_dict["test"]
             ds = ds_train if self.is_train else ds_test
         else:
             ds_dict = load_dataset("xcopa", self.lang)

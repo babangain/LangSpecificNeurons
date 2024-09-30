@@ -19,8 +19,8 @@ class LoRAFineTuner:
         self.wandb_log = config["wandb_log"]
         self.calc_norm = config["calc_norm"]
         self.acc_grad_steps = config["acc_grad_steps"]
-        self.project_name = f"{self.model_name_srt}-finetune-{self.config['task_name']}-{self.lang}"
-        self.checkpoint_dir = Path(Path.cwd(), f"outputs/ckpt/{self.project_name}")
+        self.project_name = f"{self.model_name_srt}-finetune-{self.config['task_name']}"
+        self.checkpoint_dir = Path(Path.cwd(), f"outputs/ckpt/{self.project_name}/{self.lang}")
         
         if self.config["task_name"] == "XNLI":
             self.train_ds = XNLIDataset(model_name=self.config["model_name"], lang=self.lang, max_context_len=self.config["max_seq_len"], frac=self.config["train_frac"], is_train=True)
@@ -35,10 +35,11 @@ class LoRAFineTuner:
         self.val_dl = self.val_ds.prepare_dataloader(batch_size=self.config["batch_size"])
         self.model = ModelForCLSWithLoRA(device=self.device, model_name=self.config["model_name"], num_class=self.config["num_class"], lora_rank=self.config["lora_rank"], lora_alpha=self.config["lora_alpha"]).to(self.device)
         self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.config["initial_learning_rate"], weight_decay=self.config["weight_decay"], betas=(0.95, 0.99))
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, T_0=1, eta_min=1e-8)
-        
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, T_0=1, eta_min=self.config["final_learning_rate"])
+
         if self.wandb_log:
-            wandb.init(project=self.project_name, config=config)
+            run_name = f"{self.lang}_{self.config['train_frac']:.2f}_{self.config['initial_learning_rate']:.1e}_{self.config['final_learning_rate']:.1e}_r{self.config['lora_rank']}"
+            wandb.init(project=self.project_name, name=run_name, config=config)
             wandb.watch(self.model, log="all")
             wandb.define_metric("train/step")
             wandb.define_metric("val/step")
@@ -198,20 +199,21 @@ class LoRAFineTuner:
 def main(model_name: str, device: torch.device) -> None:
     config = {
         "model_name": model_name,
-        "task_name": "XCOPA",
+        "task_name": "XNLI",
         "lang": "en",
-        "num_epochs": 5, 
+        "num_epochs": 1, 
         "batch_size": 4,
         "max_seq_len": 256,
-        "train_frac": 1.0,
-        "val_frac": 1.0,
-        "num_class": 2,
-        "lora_rank": 1,
-        "lora_alpha": 2,
-        "clip_grad_norm_value": 2.0,
-        "initial_learning_rate": 1e-5, 
+        "train_frac": 0.1,
+        "val_frac": 0.01,
+        "num_class": 3,
+        "lora_rank": 4,
+        "lora_alpha": 8,
+        "clip_grad_norm_value": 50.0,
+        "initial_learning_rate": 5e-4,
+        "final_learning_rate": 1e-9, 
         "weight_decay": 0.1,
-        "acc_grad_steps": 1,
+        "acc_grad_steps": 16,
         "is_latest_ckpt": True,
         "calc_norm": True,
         "wandb_log": True
@@ -221,10 +223,10 @@ def main(model_name: str, device: torch.device) -> None:
     print("DONE")
 
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models_map["llama2"], device=device)
+    main(models_map["sarvam"], device=device)
         

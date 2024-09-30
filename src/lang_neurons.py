@@ -220,6 +220,36 @@ class LangNeuron:
         save_path = Path(self.lang_neuron_path.parent, f'neuron_overlap_{"_".join(languages)}.png')
         plt.savefig(str(save_path), format='png', dpi=300)
         plt.clf()
+
+def lang_neuron_overlap_for_diff_lang_set(model_name: str, lang: str):
+    model_name = models_map[model_name]
+    model_name_srt = model_name.split("/")[-1]
+    lang_set_list = list({k for k, v in lang_map.items() if lang in v} - {"set5"})
+    if len(lang_set_list) <= 2:
+        return
+    lang_set = lang_set_list[0]
+    lang_neuron_path = Path(Path.cwd(), f"outputs/lang_neurons/{model_name_srt}/{lang_set}/lang_neuron_data.pkl")
+    lang_neuron = pickle.load(open(lang_neuron_path, "rb"))
+    print(f"The lang neurons data is loaded from {lang_neuron_path}")
+    
+    lang_neuron["lang_to_neuron"][lang]
+    
+    data = {}
+    for lang_set in lang_set_list:
+        lang_neuron_path = Path(Path.cwd(), f"outputs/lang_neurons/{model_name_srt}/{lang_set}/lang_neuron_data.pkl")
+        lang_neuron = pickle.load(open(lang_neuron_path, "rb"))
+        print(f"The lang neurons data is loaded from {lang_neuron_path}")
+        data[lang_set] = {tuple(i) for i in lang_neuron["lang_to_neuron"][lang].tolist()}
+    
+    set1, set2, set3 = data[lang_set_list[0]], data[lang_set_list[1]], data[lang_set_list[2]]
+    venn = venn3([set1, set2, set3], set_labels=lang_set_list)
+    venn3_circles([set1, set2, set3])
+    title = f'{model_name_srt}: Neurons Overlap for Lang: {lang} for different lang sets\n'
+        
+    plt.title(title, wrap=True)
+    save_path = Path(lang_neuron_path.parent.parent, f'{lang}_neuron_overlap_{"_".join(lang_set_list)}.png')
+    plt.savefig(str(save_path), format='png', dpi=300)
+    plt.clf()
     
 def main(model_name: str, lang_set: str, device: torch.device) -> None:
     lang_neuron_config = {
@@ -240,7 +270,12 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    for model_key in ["aya101"]:
-        for lang_set in ["set1", "set2", "set3", "set4"]:
-            main(model_name=models_map[model_key], lang_set=lang_set, device=device)
-            print(f"Model: {model_key}, Lang set: {lang_set} done!")
+    # for model_key in ["llama2"]:
+    #     for lang_set in ["set1", "set2", "set3", "set4"]:
+    #         main(model_name=models_map[model_key], lang_set=lang_set, device=device)
+    #         print(f"Model: {model_key}, Lang set: {lang_set} done!")
+
+    for model_name in models_map.keys():
+        for lang in lang_map["set5"]:
+            lang_neuron_overlap_for_diff_lang_set(model_name=model_name, lang=lang)
+    
