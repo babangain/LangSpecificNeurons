@@ -20,7 +20,6 @@ class LoRAFineTuner:
         self.calc_norm = config["calc_norm"]
         self.project_name = f"{self.model_name_srt}-finetune-{self.config['task_name']}"
         self.checkpoint_dir = Path(Path.cwd(), f"outputs/ckpt/{self.project_name}/{self.lang}")
-        self.scaler = torch.amp.GradScaler()
         
         if self.config["task_name"] == "XNLI":
             self.train_ds = XNLIDataset(model_name=self.config["model_name"], lang=self.lang, max_context_len=self.config["max_seq_len"], frac=self.config["train_frac"], is_train=True)
@@ -33,12 +32,12 @@ class LoRAFineTuner:
         
         self.train_dl = self.train_ds.prepare_dataloader(batch_size=self.config["batch_size"])
         self.val_dl = self.val_ds.prepare_dataloader(batch_size=self.config["batch_size"])
-        self.model = ModelForCLSWithLoRA(device=self.device, tokenizer=self.train_ds.tokenizer, model_name=self.config["model_name"], num_class=self.config["num_class"], lora_rank=self.config["lora_rank"], lora_alpha=self.config["lora_alpha"]).to(self.device)
+        self.model = ModelForCLSWithLoRA(device=self.device, tokenizer=self.train_ds.tokenizer, model_name=self.config["model_name"], num_class=self.config["num_class"], lora_rank=self.config["lora_rank"], lora_alpha=self.config["lora_alpha"]).to(self.device).to(torch.bfloat16)
         self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.config["initial_learning_rate"], weight_decay=self.config["weight_decay"], betas=(0.95, 0.99))
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, T_0=1, eta_min=self.config["final_learning_rate"])
 
         if self.wandb_log:
-            run_name = f"{self.lang}_{self.config['train_frac']:.2f}_{self.config['initial_learning_rate']:.1e}_{self.config['final_learning_rate']:.1e}_r{self.config['lora_rank']}"
+            run_name = f"{self.lang}_{self.config['train_frac']:.2f}_{self.config['initial_learning_rate']:.1e}_{self.config['final_learning_rate']:.1e}_r{self.config['lora_rank']}_{self.config['run_desc']}"
             wandb.init(project=self.project_name, name=run_name, config=config)
             wandb.watch(self.model, log="all")
             wandb.define_metric("train/step")
@@ -94,13 +93,12 @@ class LoRAFineTuner:
         attention_mask = batch["attention_mask"].to(self.device) # (b, T)
         if is_train:
             self.model.train()
-            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
-                out = self.model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None)["logits"]
+            out = self.model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None)["logits"]
             out.requires_grad_(True)
             assert out.requires_grad == True
         else:
             self.model.eval()
-            with torch.no_grad(), torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+            with torch.no_grad():
                 out = self.model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None)["logits"]
         return out # (b, c)
         
@@ -122,14 +120,13 @@ class LoRAFineTuner:
 
     def _optimize_batch(self, pred_outputs: torch.tensor, true_outputs: torch.tensor, ep: int, batch_index: int) -> Tuple[float, float, float, float]:  
         loss = self._calc_loss_batch(pred_outputs=pred_outputs, true_outputs=true_outputs)
-        self.scaler.scale(loss).backward()     
+        loss.backward()     
         gn = self._find_norm(True) if self.calc_norm else -1
         pn = self._find_norm(False) if self.calc_norm else -1 
         lr = self.optimizer.param_groups[0]['lr'] 
         torch.nn.utils.clip_grad_norm_(parameters=self.model.parameters(), max_norm=self.config["clip_grad_norm_value"], norm_type=2.0)
-        self.scaler.step(self.optimizer)
-        self.scaler.update()
-        # self.optimizer.step()
+        
+        self.optimizer.step()
         self.optimizer.zero_grad(set_to_none=True)
         self.scheduler.step(ep + batch_index/len(self.train_dl))
         return loss.item(), gn, pn, lr
@@ -183,20 +180,21 @@ def main(model_name: str, device: torch.device) -> None:
         "model_name": model_name,
         "task_name": "XNLI",
         "lang": "en",
-        "num_epochs": 1, 
-        "batch_size": 8,
+        "num_epochs": 2, 
+        "batch_size": 32,
         "max_seq_len": 256,
-        "train_frac": 0.11,
-        "val_frac": 0.01,
+        "train_frac": 0.1,
+        "val_frac": 1.0,
         "num_class": 3,
         "lora_rank": 4,
         "lora_alpha": 8,
-        "clip_grad_norm_value": 10.0,
-        "initial_learning_rate": 5e-5,
-        "final_learning_rate": 1e-8, 
+        "clip_grad_norm_value": 20.0,
+        "initial_learning_rate": 4e-5,
+        "final_learning_rate": 2e-5, 
         "weight_decay": 0.1,
+        "run_desc": "bf16",
         "is_latest_ckpt": False,
-        "calc_norm": True, 
+        "calc_norm": True,
         "wandb_log": True
     }
     trainer = LoRAFineTuner(device=device, config=config)

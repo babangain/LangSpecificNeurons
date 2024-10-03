@@ -201,6 +201,48 @@ class XCOPADataset(Dataset):
         dl = DataLoader(self, batch_size=batch_size, shuffle=self.is_train, collate_fn=XNLIDataset.collate_function, drop_last=True)
         return dl
 
+class XNLIDatasetHF(Dataset):
+    def __init__(self, model_name: str, lang: str, max_context_len: int, frac: float, is_train: bool) -> None:
+        super(XNLIDatasetHF, self).__init__()
+        self.cwd = Path.cwd()
+        self.lang = lang
+        self.frac = frac
+        self.is_train = is_train
+        self.model_name = model_name.split("/")[-1]
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.Tmax = max_context_len
+        self.ds = self.get_dataset()
+        
+    def get_dataset(self) -> Dataset:
+        ds_dict = load_dataset("xnli", self.lang)
+        key = "train" if self.is_train else "test"
+        ds = ds_dict[key]
+        size = int(len(ds) * self.frac)
+        subset_ds = ds.select(range(size)) # do not apply shuffling
+        dsl = [subset_ds[i] for i in range(len(subset_ds))]
+        
+        filter_dsl = []
+        with tqdm.tqdm(iterable=range(len(dsl)), desc="Preparing dataset...", unit="example", colour="green") as pbar:
+            for index in pbar:
+                inputs = [dsl[index]["premise"] + f" {self.tokenizer.eos_token} " + dsl[index]["hypothesis"]]
+                outputs = self.tokenizer(inputs, padding="max_length", truncation=True, max_length=512, return_tensors="pt") # (1, Tmax)
+                labels = torch.tensor([dsl[index]["label"]]) # (1,)
+                seq_len = outputs["attention_mask"].sum().item()
+                if seq_len < self.Tmax:
+                    outputs["input_ids"] = outputs["input_ids"][0, :self.Tmax] # (Tmax,)
+                    outputs["attention_mask"] = outputs["attention_mask"][0, :self.Tmax] # (Tmax,)
+                    outputs["labels"] = labels[0] # (scalar)
+                    filter_dsl.append(outputs)
+        return filter_dsl
+    
+    def __len__(self) -> int:
+        return len(self.ds)
+    
+    def __getitem__(self, index: int) -> dict:
+        return self.ds[index]
+
 def main_wiki(model_name: str):
     for lang in lang_map["set5"]:
         ds = WikipediaDataset(model_name=model_name, lang=lang, max_context_len=512)

@@ -8,3 +8,4 @@ wandb
 outputs/ckpt
 *ppx_data.pkl
 *.log
+results

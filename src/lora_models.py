@@ -1,7 +1,7 @@
 import torch, os, sys
 from pathlib import Path
 sys.path.append(Path(__file__).parent)
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModel, AutoModelForSequenceClassification, BitsAndBytesConfig
 from typing import List, Tuple, Union
 
 class LoRALayer(torch.nn.Module):
@@ -63,19 +63,43 @@ class ModelForCLS(torch.nn.Module):
         y = self.head(z.to(self.device)) # (b, T, c)
         out = y[:, -1, :] # (b, c) (last position embedding)
         return out
-       
+
+class ModelForSequenceClassification(torch.nn.Module):
+    def __init__(self, model_name: str, num_class: int, device: torch.device, quant_config: BitsAndBytesConfig=None):
+        super(ModelForSequenceClassification, self).__init__()
+        self.device = device
+        self.model_name = model_name
+        self.model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=num_class, quantization_config=quant_config, device_map="auto")
+
+    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor, labels: torch.Tensor) -> torch.tensor:
+        outputs = self.model(input_ids=input_ids.to(self.device), 
+                             attention_mask=attention_mask.to(self.device), 
+                             labels=labels.to(self.device) if labels is not None else None)
+        loss = outputs.loss
+        logits = outputs.logits
+        return {'loss': loss, 'logits': logits} # (scalar), (b, c)
+ 
 class ModelForCLSWithLoRA(torch.nn.Module):
-    def __init__(self, device: torch.device, model_name: str, num_class: int, lora_rank: int, lora_alpha: float):
+    def __init__(self, device: torch.device, tokenizer: AutoTokenizer, model_name: str, num_class: int, lora_rank: int, lora_alpha: float, quant_config: BitsAndBytesConfig=None):
         super(ModelForCLSWithLoRA, self).__init__()
         self.model_name = model_name
         self.device = device
+        self.tokenizer = tokenizer
         self.num_class = num_class
-        self.model = ModelForCLS(device=self.device, model_name=self.model_name, num_class=self.num_class)
-        for param in self.model.base.parameters():
+        self.model = ModelForSequenceClassification(device=self.device, model_name=self.model_name, num_class=self.num_class, quant_config=quant_config)
+        
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        self.model.model.model.config.pad_token_id = self.tokenizer.pad_token_id
+        
+        for param in self.model.model.model.parameters():
             param.requires_grad = False
+        for param in self.model.model.score.parameters():
+            param.requires_grad = True
         self.rank = lora_rank
         self.alpha = lora_alpha
-        ModelForCLSWithLoRA.replace_linear_with_lora(model=self.model.base, rank=self.rank, alpha=self.alpha)
+        ModelForCLSWithLoRA.replace_linear_with_lora(model=self.model.model, rank=self.rank, alpha=self.alpha)
     
     @staticmethod
     def replace_linear_with_lora(model: torch.nn.Module, rank: int, alpha: float):
@@ -101,9 +125,9 @@ class ModelForCLSWithLoRA(torch.nn.Module):
     def get_layers(self) -> torch.nn.ModuleList:
         m = self.model_name.lower()
         if ("llama" in m) or ("mistral" in m) or ("sarvam" in m) or ("aya-23" in m):
-            layers = self.model.base.layers
+            layers = self.model.model.model.layers
         elif "bloom" in m:
-            layers = self.model.base.transformer.h
+            layers = self.model.model.model.transformer.h
         else:
             raise NotImplementedError("Invalid model name!")
         return layers
@@ -138,19 +162,21 @@ class ModelForCLSWithLoRA(torch.nn.Module):
         for h in self.hooks_list:
             h.remove()
     
-    def forward(self, input_ids: torch.tensor, attention_mask: torch.tensor, intervene_config: Union[dict, None]) -> torch.tensor:
+    def forward(self, input_ids: torch.tensor, attention_mask: torch.tensor, intervene_config: Union[dict, None]=None, labels: Union[torch.tensor, None]=None) -> torch.tensor:
         assert list(input_ids.shape).__len__() == 2, "inputs rank must be 2 and inputs.shape = (b, T)"
         if intervene_config is not None:
             self.register_hook(intervene_config=intervene_config)
-            prediction_output = self.model(input_ids=input_ids, attention_mask=attention_mask) # (b, c)
+            prediction_output = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels) # (b, c)
             self.remove_hook()
         else:
-            prediction_output = self.model(input_ids=input_ids, attention_mask=attention_mask) # (b, c)
+            prediction_output = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels) # (b, c)
         return prediction_output
         
 def main(model_name: str, device: torch.device) -> None:
-    model = ModelForCLSWithLoRA(device=device, model_name=model_name, num_class=3, lora_rank=8, lora_alpha=16).to(device)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = ModelForCLSWithLoRA(device=device, tokenizer=tokenizer, model_name=model_name, num_class=3, lora_rank=8, lora_alpha=16).to(device)
     input_ids = torch.randint(low=0, high=100, size=(16, 256)).to(device) # (b, T)
+    labels = torch.randint(low=0, high=3, size=(16,)).to(device) # (b,)
     attention_mask = torch.ones(size=(16, 256)).to(device) # (b, T)
     print(model)
     model.calc_num_lora_params()
@@ -160,13 +186,13 @@ def main(model_name: str, device: torch.device) -> None:
     }
     model.eval()
     with torch.no_grad():
-        out1 = model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None) # (b, c)
-        out2 = model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=intervene_config) # (b, c)
-    print(out1.sum()) 
-    print(out2.sum())
+        out1 = model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None, labels=labels) # (b, c)
+        out2 = model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=intervene_config, labels=labels) # (b, c)
+    print(out1["logits"].sum()) 
+    print(out2["logits"].sum())
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
