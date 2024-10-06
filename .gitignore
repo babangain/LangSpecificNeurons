@@ -5,7 +5,7 @@ __pycache__
 *.out
 *tmp*
 wandb
-outputs/ckpt
+outputs/*ckpt*
 *ppx_data.pkl
 *.log
 results

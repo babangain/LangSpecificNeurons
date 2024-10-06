@@ -33,7 +33,7 @@ class LoRAFineTuner:
         
         self.train_dl = self.train_ds.prepare_dataloader(batch_size=self.config["batch_size"])
         self.val_dl = self.val_ds.prepare_dataloader(batch_size=self.config["batch_size"])
-        self.model = ModelForCLSWithLoRA(device=self.device, model_name=self.config["model_name"], num_class=self.config["num_class"], lora_rank=self.config["lora_rank"], lora_alpha=self.config["lora_alpha"]).to(self.device)
+        self.model = ModelForCLSWithLoRA(device=self.device, tokenizer=self.train_ds.tokenizer, model_name=self.config["model_name"], num_class=self.config["num_class"], lora_rank=self.config["lora_rank"], lora_alpha=self.config["lora_alpha"]).to(self.device)
         self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.config["initial_learning_rate"], weight_decay=self.config["weight_decay"], betas=(0.95, 0.99))
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, T_0=1, eta_min=self.config["final_learning_rate"])
 
@@ -94,13 +94,13 @@ class LoRAFineTuner:
         attention_mask = batch["attention_mask"].to(self.device) # (b, T)
         if is_train:
             self.model.train()
-            out = self.model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None)
+            out = self.model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None)["logits"]
             out.requires_grad_(True)
             assert out.requires_grad == True
         else:
             self.model.eval()
             with torch.no_grad():
-                out = self.model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None)
+                out = self.model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None)["logits"]
         return out # (b, c)
         
     def _calc_loss_batch(self, pred_outputs: torch.tensor, true_outputs: torch.tensor) -> torch.tensor:
@@ -201,7 +201,7 @@ def main(model_name: str, device: torch.device) -> None:
         "model_name": model_name,
         "task_name": "XNLI",
         "lang": "en",
-        "num_epochs": 1, 
+        "num_epochs": 2, 
         "batch_size": 4,
         "max_seq_len": 256,
         "train_frac": 0.1,
@@ -209,9 +209,9 @@ def main(model_name: str, device: torch.device) -> None:
         "num_class": 3,
         "lora_rank": 4,
         "lora_alpha": 8,
-        "clip_grad_norm_value": 50.0,
-        "initial_learning_rate": 5e-4,
-        "final_learning_rate": 1e-9, 
+        "clip_grad_norm_value": 10.0,
+        "initial_learning_rate": 4e-5,
+        "final_learning_rate": 2e-5, 
         "weight_decay": 0.1,
         "acc_grad_steps": 16,
         "is_latest_ckpt": True,
@@ -223,10 +223,10 @@ def main(model_name: str, device: torch.device) -> None:
     print("DONE")
 
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models_map["sarvam"], device=device)
+    main(models_map["llama2"], device=device)
         

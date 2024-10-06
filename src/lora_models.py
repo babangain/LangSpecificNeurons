@@ -1,7 +1,7 @@
 import torch, os, sys
 from pathlib import Path
 sys.path.append(Path(__file__).parent)
-from transformers import AutoTokenizer, AutoModel, AutoModelForSequenceClassification, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModel, BitsAndBytesConfig
 from typing import List, Tuple, Union
 
 class LoRALayer(torch.nn.Module):
@@ -47,59 +47,63 @@ class LinearWithLoRA(torch.nn.Module):
         return z
 
 class ModelForCLS(torch.nn.Module):
-    def __init__(self, device: torch.device, model_name: str, num_class: int):
+    def __init__(self, device: torch.device, model_name: str, num_class: int, quant_config: BitsAndBytesConfig):
         super(ModelForCLS, self).__init__()
         self.device = device
         self.model_name = model_name
         self.model_name_srt = model_name.split("/")[-1]
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.base = AutoModel.from_pretrained(self.model_name).to(self.device)
+        self.base = AutoModel.from_pretrained(self.model_name, quantization_config=quant_config, device_map="auto")
         self.d = self.base.config.hidden_size
         self.c = num_class
-        self.head = torch.nn.Linear(in_features=self.d, out_features=self.c).to(self.device)
+        self.loss_fn = torch.nn.CrossEntropyLoss()
+
+        # Two-layer classification head with ReLU activation
+        self.head = torch.nn.Sequential(
+            torch.nn.Linear(self.d, 1024),      
+            torch.nn.ReLU(),
+            torch.nn.Linear(1024, 256),      
+            torch.nn.ReLU(),
+            torch.nn.Linear(256, 64),      
+            torch.nn.ReLU(),
+            torch.nn.Linear(64, 16),      
+            torch.nn.ReLU(),                   
+            torch.nn.Linear(16, self.c)       
+        ).to(self.device)
     
-    def forward(self, input_ids: torch.tensor, attention_mask: torch.tensor, labels: Union[None, torch.tensor] = None) -> torch.tensor:
+    def forward(self, input_ids: torch.tensor, attention_mask: torch.tensor, labels: Union[None, torch.tensor]) -> torch.tensor:
         z = self.base(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state # (b, T, d)
-        y = self.head(z.to(self.device)) # (b, T, c)
-        out = y[:, -1, :] # (b, c) (last position embedding)
-        return out
-
-class ModelForSequenceClassification(torch.nn.Module):
-    def __init__(self, model_name: str, num_class: int, device: torch.device, quant_config: BitsAndBytesConfig=None):
-        super(ModelForSequenceClassification, self).__init__()
-        self.device = device
-        self.model_name = model_name
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=num_class, quantization_config=quant_config, device_map="auto")
-
-    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor, labels: torch.Tensor) -> torch.tensor:
-        outputs = self.model(input_ids=input_ids.to(self.device), 
-                             attention_mask=attention_mask.to(self.device), 
-                             labels=labels.to(self.device) if labels is not None else None)
-        loss = outputs.loss
-        logits = outputs.logits
-        return {'loss': loss, 'logits': logits} # (scalar), (b, c)
+        y = z[:, -1, :].to(self.device) # (b, d) (last position embedding)
+        out = self.head(y) # (b, c)
+        if labels is not None:
+            labels = labels.to(self.device)  
+            loss = self.loss_fn(out, labels) 
+        else:
+            loss = None
+        return {"logits": out, "loss": loss}
  
 class ModelForCLSWithLoRA(torch.nn.Module):
-    def __init__(self, device: torch.device, tokenizer: AutoTokenizer, model_name: str, num_class: int, lora_rank: int, lora_alpha: float, quant_config: BitsAndBytesConfig=None):
+    def __init__(self, device: torch.device, tokenizer: AutoTokenizer, model_name: str, num_class: int, lora_rank: int, lora_alpha: float, quant_config: BitsAndBytesConfig):
         super(ModelForCLSWithLoRA, self).__init__()
         self.model_name = model_name
         self.device = device
         self.tokenizer = tokenizer
         self.num_class = num_class
-        self.model = ModelForSequenceClassification(device=self.device, model_name=self.model_name, num_class=self.num_class, quant_config=quant_config)
+        self.model = ModelForCLS(device=self.device, model_name=self.model_name, num_class=self.num_class, quant_config=quant_config)
         
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
             self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-        self.model.model.model.config.pad_token_id = self.tokenizer.pad_token_id
+        self.model.base.config.pad_token_id = self.tokenizer.pad_token_id
         
-        for param in self.model.model.model.parameters():
+        for param in self.model.base.parameters():
             param.requires_grad = False
-        for param in self.model.model.score.parameters():
+        for param in self.model.head.parameters():
             param.requires_grad = True
+        
         self.rank = lora_rank
         self.alpha = lora_alpha
-        ModelForCLSWithLoRA.replace_linear_with_lora(model=self.model.model, rank=self.rank, alpha=self.alpha)
+        ModelForCLSWithLoRA.replace_linear_with_lora(model=self.model.base, rank=self.rank, alpha=self.alpha)
     
     @staticmethod
     def replace_linear_with_lora(model: torch.nn.Module, rank: int, alpha: float):
@@ -125,9 +129,9 @@ class ModelForCLSWithLoRA(torch.nn.Module):
     def get_layers(self) -> torch.nn.ModuleList:
         m = self.model_name.lower()
         if ("llama" in m) or ("mistral" in m) or ("sarvam" in m) or ("aya-23" in m):
-            layers = self.model.model.model.layers
+            layers = self.model.base.layers
         elif "bloom" in m:
-            layers = self.model.model.model.transformer.h
+            layers = self.model.base.transformer.h
         else:
             raise NotImplementedError("Invalid model name!")
         return layers
@@ -174,7 +178,7 @@ class ModelForCLSWithLoRA(torch.nn.Module):
         
 def main(model_name: str, device: torch.device) -> None:
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = ModelForCLSWithLoRA(device=device, tokenizer=tokenizer, model_name=model_name, num_class=3, lora_rank=8, lora_alpha=16).to(device)
+    model = ModelForCLSWithLoRA(device=device, tokenizer=tokenizer, model_name=model_name, num_class=3, lora_rank=8, lora_alpha=16, quant_config=None).to(device)
     input_ids = torch.randint(low=0, high=100, size=(16, 256)).to(device) # (b, T)
     labels = torch.randint(low=0, high=3, size=(16,)).to(device) # (b,)
     attention_mask = torch.ones(size=(16, 256)).to(device) # (b, T)
@@ -188,11 +192,11 @@ def main(model_name: str, device: torch.device) -> None:
     with torch.no_grad():
         out1 = model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None, labels=labels) # (b, c)
         out2 = model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=intervene_config, labels=labels) # (b, c)
-    print(out1["logits"].sum()) 
-    print(out2["logits"].sum())
+    print(out1["logits"].sum(), out1["loss"]) 
+    print(out2["logits"].sum(), out2["loss"])
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
