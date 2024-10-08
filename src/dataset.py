@@ -249,7 +249,7 @@ def main_wiki(model_name: str):
         print(ds.tokens_count/10**6)
 
 def main_xnli(model_name: str):
-    ds = XNLIDataset(model_name=model_name, lang="fr", max_context_len=256, frac=0.33, is_train=True)
+    ds = XNLIDatasetHF(model_name=model_name, lang="fr", max_context_len=256, frac=0.01, is_train=True)
     print(len(ds))
     print("DONE")
     
@@ -261,5 +261,5 @@ def main_xcopa(model_name: str):
 if __name__ == "__main__":
     ml = ["llama2"]
     for model_key in ml:
-        main_xcopa(model_name=models_map[model_key])
+        main_xnli(model_name=models_map[model_key])
         print(f"Model: {model_key} done!")

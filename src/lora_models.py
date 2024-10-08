@@ -5,7 +5,7 @@ from transformers import AutoTokenizer, AutoModel, BitsAndBytesConfig
 from typing import List, Tuple, Union
 
 class LoRALayer(torch.nn.Module):
-    def __init__(self, rank: int, alpha: float, d_in: int, d_out: int):  
+    def __init__(self, rank: int, alpha: float, d_in: int, d_out: int, mask_A: Union[torch.Tensor, None], mask_B: Union[torch.Tensor, None]):  
         super(LoRALayer, self).__init__()
         self.d_in = d_in
         self.d_out = d_out
@@ -20,23 +20,27 @@ class LoRALayer(torch.nn.Module):
             data=torch.zeros(size=(self.rank, self.d_out)),
             requires_grad=True
         )
+        self.mask_A = mask_A
+        self.mask_B = mask_B
     
     def forward(self, x: torch.tensor) -> torch.tensor:
         assert x.dim() >= 2, "Input tensor must have at least 2 dimensions."
         assert x.shape[-1] == self.d_in, f"Expected the last dimension of input to be {self.d_in}, but got {x.shape[-1]}."
-        delta_W = torch.matmul(self.A, self.B) * (self.alpha / self.rank)
+        masked_A = self.A.to(self.mask_A.device) * self.mask_A
+        masked_B = self.B.to(self.mask_A.device) * self.mask_B
+        delta_W = torch.matmul(masked_A, masked_B) * (self.alpha / self.rank)
         z = torch.matmul(x, delta_W)
         return z
     
 class LinearWithLoRA(torch.nn.Module):
-    def __init__(self, linear: torch.nn.Linear, rank: int, alpha: float):
+    def __init__(self, linear: torch.nn.Linear, rank: int, alpha: float, mask_A: Union[torch.Tensor, None], mask_B: Union[torch.Tensor, None]):
         super(LinearWithLoRA, self).__init__()
         self.rank = rank
         self.alpha = alpha
         self.linear = linear
         self.d_in = self.linear.in_features
         self.d_out = self.linear.out_features
-        self.lora = LoRALayer(rank=self.rank, alpha=self.alpha, d_in=self.d_in, d_out=self.d_out)
+        self.lora = LoRALayer(rank=self.rank, alpha=self.alpha, d_in=self.d_in, d_out=self.d_out, mask_A=mask_A, mask_B=mask_B)
 
     def forward(self, x: torch.tensor) -> torch.tensor:
         assert x.dim() >= 2, "Input tensor must have at least 2 dimensions."
@@ -47,7 +51,7 @@ class LinearWithLoRA(torch.nn.Module):
         return z
 
 class ModelForCLS(torch.nn.Module):
-    def __init__(self, device: torch.device, model_name: str, num_class: int, quant_config: BitsAndBytesConfig):
+    def __init__(self, device: torch.device, model_name: str, num_class: int, quant_config: Union[BitsAndBytesConfig, None]):
         super(ModelForCLS, self).__init__()
         self.device = device
         self.model_name = model_name
@@ -58,7 +62,7 @@ class ModelForCLS(torch.nn.Module):
         self.c = num_class
         self.loss_fn = torch.nn.CrossEntropyLoss()
 
-        # Two-layer classification head with ReLU activation
+        # Multi-layer classification head with ReLU activation
         self.head = torch.nn.Sequential(
             torch.nn.Linear(self.d, 1024),      
             torch.nn.ReLU(),
@@ -83,7 +87,7 @@ class ModelForCLS(torch.nn.Module):
         return {"logits": out, "loss": loss}
  
 class ModelForCLSWithLoRA(torch.nn.Module):
-    def __init__(self, device: torch.device, tokenizer: AutoTokenizer, model_name: str, num_class: int, lora_rank: int, lora_alpha: float, quant_config: BitsAndBytesConfig):
+    def __init__(self, device: torch.device, tokenizer: AutoTokenizer, model_name: str, num_class: int, lora_rank: int, lora_alpha: float, quant_config: Union[None, BitsAndBytesConfig], frozen_neurons: Union[None, torch.tensor]):
         super(ModelForCLSWithLoRA, self).__init__()
         self.model_name = model_name
         self.device = device
@@ -103,17 +107,53 @@ class ModelForCLSWithLoRA(torch.nn.Module):
         
         self.rank = lora_rank
         self.alpha = lora_alpha
-        ModelForCLSWithLoRA.replace_linear_with_lora(model=self.model.base, rank=self.rank, alpha=self.alpha)
+        self.apply_lora(rank=self.rank, alpha=self.alpha, frozen_neurons=frozen_neurons)
     
+    def apply_lora(self, rank: int, alpha: float, frozen_neurons: Union[None, torch.tensor]) -> None:
+        """frozen_neuron_ids = [(i, j) | j: neuron index for a layer i]
+        """
+        if frozen_neurons is not None:
+            frozen_neurons_dict = {}
+            for (layer_idx, neuron_idx) in frozen_neurons:
+                layer_idx = layer_idx.item()
+                if layer_idx not in frozen_neurons_dict:
+                    frozen_neurons_dict[layer_idx] = []
+                frozen_neurons_dict[layer_idx].append(neuron_idx.item())
+
+            for layer_idx, layer in enumerate(self.get_layers()):
+                target_linear_name, target_module = self.get_target_linear_module(layer_idx=layer_idx)
+                if layer_idx in frozen_neurons_dict:
+                    frozen_neuron_ids = frozen_neurons_dict[layer_idx]
+                    up_proj_linear = getattr(target_module, target_linear_name)
+                    mask_A, mask_B = ModelForCLSWithLoRA.create_lora_mask(device=self.device, d_in=up_proj_linear.in_features, d_out=up_proj_linear.out_features, rank=rank, frozen_neuron_ids=frozen_neuron_ids)
+                    up_proj_lora = LinearWithLoRA(up_proj_linear, rank, alpha, mask_A, mask_B)
+                    setattr(target_module, target_linear_name, up_proj_lora)
+                    
+                ModelForCLSWithLoRA.replace_linear_with_lora(device=self.device, model=layer, rank=rank, alpha=alpha, name_to_skip="linear")
+        else:
+            ModelForCLSWithLoRA.replace_linear_with_lora(device=self.device, model=self.model.base, rank=rank, alpha=alpha, name_to_skip="")            
+
     @staticmethod
-    def replace_linear_with_lora(model: torch.nn.Module, rank: int, alpha: float):
+    def replace_linear_with_lora(device: torch.device, model: torch.nn.Module, rank: int, alpha: float, name_to_skip: str):
         for name, module in model.named_children():
-            if isinstance(module, torch.nn.Linear):
-                linear_lora = LinearWithLoRA(module, rank, alpha)
+            if isinstance(module, torch.nn.Linear) and name != name_to_skip:
+                mask_A, mask_B = ModelForCLSWithLoRA.create_lora_mask(device=device, d_in=module.in_features, d_out=module.out_features, rank=rank, frozen_neuron_ids=None)
+                linear_lora = LinearWithLoRA(module, rank, alpha, mask_A, mask_B)
                 setattr(model, name, linear_lora) # parent is model, child is module
             else:
-                ModelForCLSWithLoRA.replace_linear_with_lora(module, rank, alpha)
-       
+                ModelForCLSWithLoRA.replace_linear_with_lora(device, module, rank, alpha, name_to_skip)
+    
+    @staticmethod
+    def create_lora_mask(device: torch.device, d_in: int, d_out: int, rank: int, frozen_neuron_ids: Union[None, torch.tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """frozen_neuron_ids = [j | j: neuron index for a layer i]
+        """
+        mask_A = torch.ones(d_in, rank).to(device)
+        mask_B = torch.ones(rank, d_out).to(device)
+        if frozen_neuron_ids is not None:
+            for neuron_id in frozen_neuron_ids:
+                mask_B[:, neuron_id] = 0  # Zero out the entire column for the frozen neurons
+        return mask_A, mask_B
+     
     def calc_num_lora_params(self) -> None:
         # Check if the requires_grad are set correctly
         train_params = 0
@@ -136,22 +176,36 @@ class ModelForCLSWithLoRA(torch.nn.Module):
             raise NotImplementedError("Invalid model name!")
         return layers
     
-    def get_target_module(self, layer_idx: int) -> torch.nn.Module:
+    def get_target_act_module(self, layer_idx: int) -> torch.nn.Module:
         m = self.model_name.lower()
+        mlp = self.get_layers()[layer_idx].mlp
         if ("llama" in m) or ("mistral" in m) or ("sarvam" in m) or ("aya-23" in m):
-            target_module = self.get_layers()[layer_idx].mlp.act_fn
+            target_module = mlp.act_fn
         elif "bloom" in m:
-            target_module = self.get_layers()[layer_idx].mlp.gelu_impl
+            target_module = mlp.gelu_impl
         else:
             raise NotImplementedError("Invalid model name!")
         return target_module
+
+    def get_target_linear_module(self, layer_idx: int) -> Tuple[str, torch.nn.Linear]:
+        m = self.model_name.lower()
+        mlp = self.get_layers()[layer_idx].mlp        
+        if ("llama" in m) or ("mistral" in m) or ("sarvam" in m) or ("aya-23" in m):
+            target_module = mlp
+            name = "gate_proj"
+        elif "bloom" in m:
+            target_module = mlp
+            name = "dense_h_to_4h"
+        else:
+            raise NotImplementedError("Invalid model name!")
+        return name, target_module
     
     def create_hook_function(self, intervene_config: dict):
         def hook_function(module: torch.nn.Module, inputs: torch.Tensor, outputs: torch.Tensor):
             indices = intervene_config["indices"] # List[n x Tuple[layer_index, neuron_index]] (n neurons to intervene)
             value = intervene_config["value"] # List[n] 
             for i, (layer_idx, neuron_idx) in enumerate(indices):
-                if module == self.get_target_module(layer_idx=layer_idx):
+                if module == self.get_target_act_module(layer_idx=layer_idx):
                     outputs.index_fill_(dim=-1, index=torch.tensor([neuron_idx]).to(self.device), value=value[i])
         return hook_function
 
@@ -159,14 +213,18 @@ class ModelForCLSWithLoRA(torch.nn.Module):
         self.hooks_list = [] # List[L]
         for layer_idx in range(len(self.get_layers())):
             hook_function = self.create_hook_function(intervene_config=intervene_config)
-            h = self.get_target_module(layer_idx=layer_idx).register_forward_hook(hook_function)
+            h = self.get_target_act_module(layer_idx=layer_idx).register_forward_hook(hook_function)
             self.hooks_list.append(h)
     
     def remove_hook(self):
         for h in self.hooks_list:
             h.remove()
     
-    def forward(self, input_ids: torch.tensor, attention_mask: torch.tensor, intervene_config: Union[dict, None]=None, labels: Union[torch.tensor, None]=None) -> torch.tensor:
+    def forward(self, input_ids: torch.tensor, attention_mask: torch.tensor, intervene_config: Union[dict, None] = None, labels: Union[torch.tensor, None] = None) -> torch.tensor:
+        """intervene_config = {
+            "indices": [(i, j) | i: layer index, j: neuron index]
+            "value": [i | for each index i in indices])
+        }"""
         assert list(input_ids.shape).__len__() == 2, "inputs rank must be 2 and inputs.shape = (b, T)"
         if intervene_config is not None:
             self.register_hook(intervene_config=intervene_config)
@@ -178,7 +236,7 @@ class ModelForCLSWithLoRA(torch.nn.Module):
         
 def main(model_name: str, device: torch.device) -> None:
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = ModelForCLSWithLoRA(device=device, tokenizer=tokenizer, model_name=model_name, num_class=3, lora_rank=8, lora_alpha=16, quant_config=None).to(device)
+    model = ModelForCLSWithLoRA(device=device, tokenizer=tokenizer, model_name=model_name, num_class=3, lora_rank=8, lora_alpha=16, quant_config=None, frozen_neurons=torch.tensor([[0,1], [1,2], [2,3], [2,4], [2,5]])).to(device)
     input_ids = torch.randint(low=0, high=100, size=(16, 256)).to(device) # (b, T)
     labels = torch.randint(low=0, high=3, size=(16,)).to(device) # (b,)
     attention_mask = torch.ones(size=(16, 256)).to(device) # (b, T)
@@ -196,7 +254,7 @@ def main(model_name: str, device: torch.device) -> None:
     print(out2["logits"].sum(), out2["loss"])
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
