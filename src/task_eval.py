@@ -22,7 +22,7 @@ class Evaluator:
         self.model_name_srt = self.model_name.split("/")[-1]
         self.task_name = self.config_data["config"]["task_name"]
         self.train_lang = self.config_path.parent.name.split("_")[1]
-        self.frozen_lang = self.config_path.parent.name.split("_")[3:5] if self.config_path.parent.name.split("_")[3] else ""
+        self.frozen_lang = "_".join(self.config_path.parent.name.split("_")[3:5]) if self.config_path.parent.name.split("_")[3] else ""
         self.eval_lang = self.config["eval_lang"]
         
         self.eval_path = Path(Path.cwd(), f"outputs/task_eval/{self.model_name_srt}_finetune_{self.task_name}")
@@ -92,34 +92,38 @@ class Evaluator:
         self.eval_ds = XNLIDatasetHF(model_name=self.model_name, lang=lang, max_context_len=self.config_data["config"]["max_context_length"], frac=self.config["eval_frac"], is_train=False)
         self.eval_dl = DataLoader(self.eval_ds, batch_size=self.config["batch_size"], shuffle=False, drop_last=True)
         
-        acc = self._evaluate_dataloader(intervene_config=None)
-        if self.train_lang == lang:
-            res1 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Direct acc: {acc}"
+        if self.config["is_zero_shot"]:
+            acc = self._evaluate_dataloader(intervene_config=None)
+            if self.train_lang == lang:
+                res1 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Direct acc: {acc}"
+            else:
+                res1 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Zero shot acc: {acc}"
         else:
-            res1 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Zero shot acc: {acc}"
-        
+            res1 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Zero shot acc: NOT CALCULATED"                
+            
         print(res1)
         int_acc = self._evaluate_dataloader(intervene_config=intervene_config)
         res2 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Intervene acc: {int_acc}"
         print(res2)
         
-        with open(Path(self.eval_path, f"train_{self.train_lang}_frozen_{self.frozen_lang}_eval_{self.eval_lang}_result.txt"), "w") as f:
+        with open(Path(self.eval_path, f"{self.config['ckpt_name'].split('/')[0]}_train_{self.train_lang}_frozen_{self.frozen_lang}_eval_{self.eval_lang}_result.txt"), "w") as f:
             f.writelines("\n".join([res1, res2]))
               
 def main(device: torch.device) -> None:
     config = {
-        "config_path": Path(Path.cwd(), "outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI/data_en_frozen_set1_vi_0.25_5.0e-05_r8/master_config.pkl"),
-        "ckpt_name": "checkpoint-12269/pytorch_model.bin",
-        "eval_lang": "set1_vi", # "setX_yy"
-        "batch_size": 8,
-        "eval_frac": 0.1,
+        "config_path": Path(os.getenv("CONFIG_PATH")),
+        "ckpt_name": os.getenv("CKPT_NAME"),
+        "eval_lang": os.getenv("EVAL_LANG"),
+        "batch_size": int(os.getenv("BATCH_SIZE", 8)),
+        "eval_frac": float(os.getenv("EVAL_FRAC", 1.0)),
+        "is_zero_shot": bool(int(os.getenv("IS_ZERO_SHOT")))
     }
     evaluator = Evaluator(device=device, config=config)
     evaluator.evaluate()
     print("DONE")
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")

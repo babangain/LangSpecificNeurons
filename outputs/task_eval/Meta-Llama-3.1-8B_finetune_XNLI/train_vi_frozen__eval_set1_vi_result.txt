@@ -1,2 +1,0 @@
-[RESULT] Train lang: vi, Frozen lang: , Eval lang: set1_vi, Direct acc: 0.8649193644523621
-[RESULT] Train lang: vi, Frozen lang: , Eval lang: set1_vi, Intervene acc: 0.8629032373428345
