@@ -1,12 +1,13 @@
 import torch, json, os, sys
 from pathlib import Path
 sys.path.append(Path(__file__).parent)
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoModel
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoModel, BitsAndBytesConfig, QuantoConfig, FbgemmFp8Config
 from typing import List, Tuple, Union
 import pandas as pd
-from dataset import WikipediaDataset
+from dataset import WikipediaDataset, WikipediaDatasetHF
 from abc import ABC, abstractmethod
 from utils import models_map
+from torch.utils.data import DataLoader
 
 class AbstractModelForProbing(ABC, torch.nn.Module):
     def __init__(self, device: torch.device, model_name: str, model: torch.nn.Module, tokenizer: Union[AutoTokenizer, None]):
@@ -172,7 +173,80 @@ def get_tokenizer_and_model(model_name: Union[str, None], device: torch.device) 
         else:
             raise NotImplementedError("Invalid model name!")
     return tokenizer, model
+
+class ModelForMLM(torch.nn.Module):
+    def __init__(self, device: torch.device, model_name: str, quant_config: Union[None, BitsAndBytesConfig]):
+        super(ModelForMLM, self).__init__()
+        self.model_name = model_name
+        self.model_name_srt = self.model_name.split("/")[-1]
+        self.device = device
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.quant_config = quant_config
+        self.model = AutoModelForCausalLM.from_pretrained(self.model_name, quantization_config=self.quant_config, device_map="auto")
+        self.loss_fn = torch.nn.CrossEntropyLoss(ignore_index=-100)
+    
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        self.model.config.pad_token_id = self.tokenizer.pad_token_id
         
+    def get_layers(self) -> torch.nn.ModuleList:
+        m = self.model_name.lower()
+        if ("llama" in m) or ("mistral" in m) or ("sarvam" in m) or ("aya-23" in m):
+            layers = self.model.model.layers
+        elif "bloom" in m:
+            layers = self.model.model.transformer.h
+        else:
+            raise NotImplementedError("Invalid model name!")
+        return layers
+
+    def get_target_linear_module(self, layer_idx: int) -> Tuple[str, torch.nn.Linear]:
+        m = self.model_name.lower()
+        mlp = self.get_layers()[layer_idx].mlp        
+        if ("llama" in m) or ("mistral" in m) or ("sarvam" in m) or ("aya-23" in m):
+            target_module = mlp.gate_proj
+            name = "gate_proj"
+        elif "bloom" in m:
+            target_module = mlp.dense_h_to_4h
+            name = "dense_h_to_4h"
+        else:
+            raise NotImplementedError("Invalid model name!")
+        return name, target_module
+    
+    def create_hook_function(self, name: str):
+        def hook_function(module: torch.nn.Module, inputs: torch.Tensor, outputs: torch.Tensor):
+            self.activations[name] = outputs # (b, T, 4d)
+            outputs.retain_grad()
+        return hook_function
+
+    def register_hook(self):
+        self.hooks_list = [] # List[L]
+        for layer_idx in range(len(self.get_layers())):
+            _, target_module = self.get_target_linear_module(layer_idx=layer_idx)
+            hook_function = self.create_hook_function(name=layer_idx)
+            h = target_module.register_forward_hook(hook_function)
+            self.hooks_list.append(h)
+    
+    def remove_hook(self):
+        for h in self.hooks_list:
+            h.remove()
+    
+    def forward(self, input_ids: torch.tensor, attention_mask: torch.tensor, labels: torch.tensor) -> dict:
+        """input_ids = attention_mask = labels = (b, T)
+        attention_mask = 0 means padded token and 1 means real token
+        """
+        input_ids = input_ids.to(self.device)
+        attention_mask = attention_mask.to(self.device)
+        labels = labels.to(self.device)
+        
+        self.activations = {} # Dict[(b, T, 4d)]
+        self.register_hook()
+        out = self.model(input_ids=input_ids, attention_mask=attention_mask)["logits"] # (b, T, V)
+        self.remove_hook()
+        
+        loss = self.loss_fn(out.flatten(0,1), labels.flatten()) 
+        return {"pred_labels": out.argmax(dim=-1), "loss": loss} # (b, T)
+       
 def main(model_name: str, device: torch.device) -> None:
     tokenizer, model = get_tokenizer_and_model(model_name=model_name, device=device)
     ds = WikipediaDataset(model_name=model_name, lang="en", max_context_len=512)
@@ -188,13 +262,26 @@ def main(model_name: str, device: torch.device) -> None:
     print(out["logits"].sum())      
     out = model(input_dict["input_ids"], input_dict["attention_mask"], intervene_config=None)
     print(out["logits"].sum())  
-    
+
+def main_mlm(model_name: str, device: torch.device) -> None:
+    ds = WikipediaDatasetHF(model_name=model_name, lang="en", max_context_len=512)
+    dl = DataLoader(dataset=ds, batch_size=4)
+    input_dict = next(iter(dl))
+    quant_config = QuantoConfig(weights="float8")
+    model = ModelForMLM(device=device, model_name=model_name, quant_config=quant_config)
+    print(model)
+    out = model(**input_dict)
+    print(out)   
+    print([v.grad for k,v in model.activations.items()])
+    out["loss"].backward()   
+    print([v.grad.sum() for k,v in model.activations.items()])
+
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(models_map["llama2"], device=device)
+    main_mlm(models_map["llama3"], device=device)
     
     
