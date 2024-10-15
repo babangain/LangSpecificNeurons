@@ -1,8 +1,8 @@
 import os, json, pickle
 from pathlib import Path
 import wandb
-# wandb.login()
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+wandb.login()
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from transformers import AutoTokenizer, TrainingArguments, Trainer, DefaultDataCollator, get_cosine_with_hard_restarts_schedule_with_warmup, BitsAndBytesConfig, TrainerCallback
 from dataset import XNLIDatasetHF
@@ -167,10 +167,10 @@ class LoRAFineTuner:
 def main(model_name: str, device: torch.device) -> None:
     config = {
         "model_name": model_name, "task_name": "XNLI",
-        "lang": "en", "frozen_lang": "set4_hi", # "setX_yy" Could be empty string
+        "lang": "ur", "frozen_lang": "", # "setX_yy" Could be empty string
         "num_epochs": 1, "num_steps": None, "batch_size": 8, "max_context_length": 256, # steps are auto calculated
-        "train_frac": 0.25, "eval_frac": 0.1,
-        "initial_lr": 5e-5, "num_class": 3, "lora_rank": 8, "lora_alpha": 16, "max_grad_norm": 10.0, "weight_decay": 0.1,
+        "train_frac": 0.25, "eval_frac": 1.0,
+        "initial_lr": 9e-6, "num_class": 3, "lora_rank": 8, "lora_alpha": 16, "max_grad_norm": 10.0, "weight_decay": 0.1,
         "adam_betas": (0.95, 0.999), "grad_acc_steps": 1, "num_ckpt_per_epoch": 4, "is_4bit_quant": True, "fp16": False, "bf16": True,
         "wandb_log": True
     }
