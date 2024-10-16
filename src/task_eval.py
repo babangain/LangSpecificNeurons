@@ -23,6 +23,7 @@ class Evaluator:
         self.task_name = self.config_data["config"]["task_name"]
         self.train_lang = self.config_path.parent.name.split("_")[1]
         self.frozen_lang = "_".join(self.config_path.parent.name.split("_")[3:5]) if self.config_path.parent.name.split("_")[3] else ""
+        self.frozen_lang = "_".join(self.config_path.parent.name.split("_")[3:5]) if self.config_path.parent.name.split("_")[3] else ""
         self.eval_lang = self.config["eval_lang"]
         
         self.eval_path = Path(Path.cwd(), f"outputs/task_eval/{self.model_name_srt}_finetune_{self.task_name}")
@@ -101,6 +102,15 @@ class Evaluator:
         else:
             res1 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Zero shot acc: NOT CALCULATED"                
             
+        if self.config["is_zero_shot"]:
+            acc = self._evaluate_dataloader(intervene_config=None)
+            if self.train_lang == lang:
+                res1 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Direct acc: {acc}"
+            else:
+                res1 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Zero shot acc: {acc}"
+        else:
+            res1 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Zero shot acc: NOT CALCULATED"                
+            
         print(res1)
         int_acc = self._evaluate_dataloader(intervene_config=intervene_config)
         res2 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Intervene acc: {int_acc}"
@@ -116,6 +126,12 @@ def main(device: torch.device) -> None:
         "eval_lang": os.getenv("EVAL_LANG"),
         "batch_size": int(os.getenv("BATCH_SIZE", 8)),
         "eval_frac": float(os.getenv("EVAL_FRAC", 1.0)),
+        "is_zero_shot": bool(int(os.getenv("IS_ZERO_SHOT"))),
+        "config_path": Path(os.getenv("CONFIG_PATH")),
+        "ckpt_name": os.getenv("CKPT_NAME"),
+        "eval_lang": os.getenv("EVAL_LANG"),
+        "batch_size": int(os.getenv("BATCH_SIZE", 8)),
+        "eval_frac": float(os.getenv("EVAL_FRAC", 1.0)),
         "is_zero_shot": bool(int(os.getenv("IS_ZERO_SHOT")))
     }
     evaluator = Evaluator(device=device, config=config)
@@ -123,7 +139,7 @@ def main(device: torch.device) -> None:
     print("DONE")
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
