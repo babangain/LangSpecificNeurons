@@ -2,27 +2,23 @@
 
 # List of configuration values to iterate over
 CONFIG_PATHS=(
-    "/raid/speech/soumenmondal/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI/data_hi_frozen__0.25_1.0e-05_r8/master_config.pkl"
-    "/raid/speech/soumenmondal/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI/data_hi_frozen__0.25_1.0e-05_r8/master_config.pkl"
-    "/raid/speech/soumenmondal/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI/data_hi_frozen__0.25_1.0e-05_r8/master_config.pkl"
+    "/home/soumen/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI/data_en_frozen_set3_hi_0.25_5.0e-05_r8/master_config.pkl"
+    "/home/soumen/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI/data_en_frozen_set4_hi_0.25_5.0e-05_r8/master_config.pkl"
 )
 
 CKPT_NAMES=(
-    "checkpoint-12148/pytorch_model.bin"
-    "checkpoint-12148/pytorch_model.bin"
-    "checkpoint-12148/pytorch_model.bin"
+    "checkpoint-12268/pytorch_model.bin"
+    "checkpoint-12268/pytorch_model.bin"
 )
 
 EVAL_LANGS=(
-    "set2_hi"
     "set3_hi"
-    "set4_hi"
+    "set3_hi"
 )
 
 IS_ZERO_SHOTS=(
     1
-    0
-    0
+    1
 )
 
 BATCH_SIZE=8
@@ -44,7 +40,5 @@ for i in "${!CONFIG_PATHS[@]}"; do
     echo "Eval Lang: $EVAL_LANG"
     echo "Is zero shot: $IS_ZERO_SHOT"
     
-    # python src/task_eval.py 
-    # nohup python src/task_eval.py > task_eval_vi_${i}.out & 
-    nohup python src/task_eval.py > task_eval_hi_${i}.out & 
+    nohup python src/task_eval.py > task_eval_set4_${i}.out & 
 done

@@ -243,10 +243,68 @@ class XNLIDatasetHF(Dataset):
     def __getitem__(self, index: int) -> dict:
         return self.ds[index]
 
+class WikipediaDatasetHF(Dataset):
+    def __init__(self, model_name: str, lang: str, max_context_len: int) -> None:
+        super(WikipediaDatasetHF, self).__init__()
+        self.cwd = Path.cwd()
+        self.lang = lang
+        self.model_name = model_name.split("/")[-1]
+        self.ds_file_name = Path(self.cwd, f"data/{self.model_name}/{self.lang}.pkl")
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.Tmax = max_context_len
+        
+        if self.ds_file_name.exists():
+            self.__dict__.update(pickle.load(open(self.ds_file_name, "rb")))
+            print(f"{self.info()}: The dataset is loaded from {self.ds_file_name}")
+        else:
+            Path.mkdir(self.ds_file_name.parent, exist_ok=True, parents=True)
+            self.ds, self.tokens_count = self.get_dataset()
+            self.ds.append(0) # last token ID must be eot token ID
+            pickle.dump(self.__dict__, open(self.ds_file_name, "wb"))
+            print(f"{self.info()}: The dataset is stored at {self.ds_file_name}")
+    
+    def info(self) -> str:
+        return f"[INFO] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    
+    def get_dataset(self) -> List[int]:
+        ds = load_dataset("graelo/wikipedia", f"20230901.{self.lang}")
+        shuffled_ds = ds["train"].shuffle(seed=42)
+        token_ids = []
+        count = 0
+        with tqdm.tqdm(iterable=range(len(shuffled_ds)), 
+                       desc=f"Creating dataset for lang: {self.lang} (to be stopped after 100M tokens)",
+                       unit=" articles",
+                       colour="green") as pbar:
+            for i in pbar:
+                ids  = self.tokenizer(shuffled_ds[i]["text"])["input_ids"]
+                token_ids +=  ids # List[100M]
+                count += len(ids)
+                pbar.set_postfix(tokens_seen=f"{count/(10**6):.2f}M")
+                if count > 10**8:
+                    break
+        return token_ids, count
+    
+    def __len__(self) -> int:
+        return int((len(self.ds)-1)/self.Tmax)
+    
+    def __getitem__(self, index: int) -> dict:
+        assert index < len(self) and index >= 0, f"Index must be in between 0 to {len(self)-1}"
+        start = self.Tmax * index
+        end = start + self.Tmax
+        x = torch.tensor(self.ds[start:end]) # (Tmax,)
+        y = torch.tensor(self.ds[start+1:end+1]) # (Tmax,)
+        return {
+            "input_ids": x,
+            "labels": y,
+            "attention_mask": torch.ones_like(x)
+        }
+
 def main_wiki(model_name: str):
-    for lang in lang_map["set5"]:
-        ds = WikipediaDataset(model_name=model_name, lang=lang, max_context_len=512)
-        print(ds.tokens_count/10**6)
+    ds = WikipediaDatasetHF(model_name=model_name, lang="en", max_context_len=256)
+    print(len(ds))
+    dl = next(iter(ds))
+    print(dl)
+    print({x: y.shape for x, y in dl.items()})
 
 def main_xnli(model_name: str):
     ds = XNLIDatasetHF(model_name=model_name, lang="fr", max_context_len=256, frac=0.01, is_train=True)
@@ -259,7 +317,6 @@ def main_xcopa(model_name: str):
     print("DONE")
 
 if __name__ == "__main__":
-    ml = ["llama2"]
-    for model_key in ml:
-        main_xnli(model_name=models_map[model_key])
-        print(f"Model: {model_key} done!")
+    model_key = "llama3"
+    main_wiki(model_name=models_map[model_key])
+    print(f"Model: {model_key} done!")
