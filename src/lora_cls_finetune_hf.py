@@ -1,8 +1,8 @@
 import os, json, pickle
 from pathlib import Path
 import wandb
-# wandb.login()
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+wandb.login()
+os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from transformers import AutoTokenizer, TrainingArguments, Trainer, DefaultDataCollator, get_cosine_with_hard_restarts_schedule_with_warmup, BitsAndBytesConfig, TrainerCallback
 from dataset import XNLIDatasetHF
@@ -155,7 +155,7 @@ class LoRAFineTuner:
         model = ModelForCLSWithLoRA(device=device, tokenizer=tokenizer, model_name=model_name, num_class=config["num_class"], lora_rank=config["lora_rank"], lora_alpha=config["lora_alpha"], quant_config=config_data["quant_config"], frozen_neurons=None)
         checkpoint_path = Path(config_path.parent, checkpoint_name)
         checkpoint = torch.load(checkpoint_path, map_location=device)
-        model.load_state_dict(checkpoint)
+        model.load_state_dict(checkpoint, strict=False)
         
         print(f"Model loaded from checkpoint: {checkpoint_path}")
         return {"model": model, "config_data": config_data}
@@ -167,25 +167,15 @@ class LoRAFineTuner:
 def main(model_name: str, device: torch.device) -> None:
     config = {
         "model_name": model_name, "task_name": "XNLI",
-        "lang": "en", "frozen_lang": "set1_vi", # "setX_yy" Could be empty string
+        "lang": "hi", "frozen_lang": "", # "setX_yy" Could be empty string
         "num_epochs": 1, "num_steps": None, "batch_size": 8, "max_context_length": 256, # steps are auto calculated
         "train_frac": 0.25, "eval_frac": 1.0,
-        "initial_lr": 5e-5, "num_class": 3, "lora_rank": 8, "lora_alpha": 16, "max_grad_norm": 10.0, "weight_decay": 0.1,
+        "initial_lr": 1e-5, "num_class": 3, "lora_rank": 8, "lora_alpha": 16, "max_grad_norm": 10.0, "weight_decay": 0.1,
         "adam_betas": (0.95, 0.999), "grad_acc_steps": 1, "num_ckpt_per_epoch": 4, "is_4bit_quant": True, "fp16": False, "bf16": True,
         "wandb_log": True
     }
     trainer = LoRAFineTuner(device=device, config=config)
     trainer.train()
-    # out = LoRAFineTuner.load_model_and_trainer(config_path="/raid/speech/soumen/MS_Research/LangSpecificNeurons/outputs/ckpt/Llama-2-7b-hf_XNLI_en_0.00_5.0e-05_r8/master_config.pkl",
-    #                                                       checkpoint_name="checkpoint-98/pytorch_model.bin",
-    #                                                       device=device)
-    # model = out["model"]
-    # trainer = out["trainer"]
-    # config_data = out["config_data"]
-    
-    # eval_ds = XNLIDatasetHF(model_name=config_data["config"]["model_name"], lang=config_data["config"]["lang"], max_context_len=config_data["config"]["max_context_length"], frac=config_data["config"]["eval_frac"], is_train=False)
-    # val = trainer.predict(eval_ds)
-    # print(val)
     
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
