@@ -1,5 +1,9 @@
 import json, os, sys, tqdm, pickle, datetime, math, random
+<<<<<<< HEAD
 os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+=======
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+>>>>>>> 41ceec126d6f5db8c43f58f1d2b7e51c457be658
 import torch
 from pathlib import Path
 sys.path.append(Path(__file__).parent)
@@ -164,5 +168,9 @@ if __name__ == "__main__":
     print(f"Using {device}...")
     
     methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std"]
+<<<<<<< HEAD
     main(model_name=models_map["llama3"], lang_set=methods[-2], device=device)
+=======
+    main(model_name=models_map["llama3"], lang_set=methods[2], device=device)
+>>>>>>> 41ceec126d6f5db8c43f58f1d2b7e51c457be658
     
