@@ -248,9 +248,10 @@ class WikipediaDatasetHF(Dataset):
         super(WikipediaDatasetHF, self).__init__()
         self.cwd = Path.cwd()
         self.lang = lang
-        self.model_name = model_name.split("/")[-1]
-        self.ds_file_name = Path(self.cwd, f"data/{self.model_name}/{self.lang}.pkl")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model_name = model_name
+        self.model_name_srt = self.model_name.split("/")[-1]
+        self.ds_file_name = Path(self.cwd, f"data/{self.model_name_srt}/{self.lang}.pkl")
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.Tmax = max_context_len
         
         if self.ds_file_name.exists():
@@ -293,18 +294,16 @@ class WikipediaDatasetHF(Dataset):
         end = start + self.Tmax
         x = torch.tensor(self.ds[start:end]) # (Tmax,)
         y = torch.tensor(self.ds[start+1:end+1]) # (Tmax,)
-        return {
-            "input_ids": x,
-            "labels": y,
-            "attention_mask": torch.ones_like(x)
-        }
+        item = {
+            "input_ids": x[:self.Tmax], # (Tmax,)
+            "attention_mask": torch.ones_like(x[:self.Tmax]), # (Tmax,)
+            "labels": y[:self.Tmax] # (Tmax,)
+        }         
+        return item
 
 def main_wiki(model_name: str):
     ds = WikipediaDatasetHF(model_name=model_name, lang="en", max_context_len=256)
     print(len(ds))
-    dl = next(iter(ds))
-    print(dl)
-    print({x: y.shape for x, y in dl.items()})
 
 def main_xnli(model_name: str):
     ds = XNLIDatasetHF(model_name=model_name, lang="fr", max_context_len=256, frac=0.01, is_train=True)
@@ -317,6 +316,7 @@ def main_xcopa(model_name: str):
     print("DONE")
 
 if __name__ == "__main__":
-    model_key = "llama3"
-    main_wiki(model_name=models_map[model_key])
-    print(f"Model: {model_key} done!")
+    ml = ["llama2"]
+    for model_key in ml:
+        main_wiki(model_name=models_map[model_key])
+        print(f"Model: {model_key} done!")
