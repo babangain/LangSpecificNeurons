@@ -1,11 +1,9 @@
 import wandb, torch, tqdm, sys, os, json, math, gc, pickle
+os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 from pathlib import Path
 sys.path.append(Path(__file__).parent.parent.__str__())
 from typing import List, Tuple, Union, Any
 from dataset import XNLIDatasetHF
-from lora_models import ModelForCLSWithLoRA
-from utils import models_map
-from datasets import load_dataset
 from torch.utils.data import Dataset, DataLoader
 from lora_cls_finetune_hf import LoRAFineTuner
 
@@ -15,41 +13,40 @@ class Evaluator:
         self.config = config
         self.config_path = self.config["config_path"]
         out = LoRAFineTuner.load_model(config_path=self.config_path, checkpoint_name=self.config["ckpt_name"], device=self.device)
-        self.model = out["model"]
+        self.model = out["model"].to(self.device)
         self.config_data = out["config_data"]
         
         self.model_name = self.config_data["config"]["model_name"]
         self.model_name_srt = self.model_name.split("/")[-1]
         self.task_name = self.config_data["config"]["task_name"]
-        self.train_lang = self.config_path.parent.name.split("_")[1]
-        self.frozen_lang = "_".join(self.config_path.parent.name.split("_")[3:5]) if self.config_path.parent.name.split("_")[3] else ""
-        self.frozen_lang = "_".join(self.config_path.parent.name.split("_")[3:5]) if self.config_path.parent.name.split("_")[3] else ""
+        self.train_lang = self.config_data["config"]["lang"]
+        self.frozen_lang = self.config_data["config"]["frozen_lang"]
         self.eval_lang = self.config["eval_lang"]
+        self.method = self.config_data["config"]["method"]
         
         self.eval_path = Path(Path.cwd(), f"outputs/task_eval/{self.model_name_srt}_finetune_{self.task_name}")
         if not self.eval_path.exists():
             Path.mkdir(self.eval_path, parents=True, exist_ok=True)
         
     def _get_intervene_config(self, intervene_lang: str, is_activate: bool) -> dict:
-        """intervene_lang = setX_yy"""
-        lang_set = intervene_lang.split('_')[0]
-        lang = intervene_lang.split('_')[1]
-        lang_neuron_path = Path(Path.cwd(), f"outputs/lang_neurons/{self.model_name_srt}/{lang_set}/lang_neuron_data.pkl")
+        """intervene_lang = yy"""
+        lang = intervene_lang
+        lang_neuron_path = Path(Path.cwd(), f"outputs/lang_neurons/{self.model_name_srt}/{self.method}/lang_neuron_data.pkl")
         if lang_neuron_path.exists():
             lang_neuron = pickle.load(open(lang_neuron_path, "rb"))
             print(f"The lang neurons data is loaded from {lang_neuron_path}")
         else:
             raise ValueError(f"{lang_neuron_path} doesn't exist!")
 
-        act_data_path = Path(Path.cwd(), f"outputs/activation/{self.model_name_srt}/act_{lang}.pkl")
+        act_data_path = Path(Path.cwd(), f"outputs/activation/{self.model_name_srt}/{self.method}/rel_{lang}.pkl")
         if act_data_path.exists():
             act_data = pickle.load(open(act_data_path, "rb"))
             print(f"The activation data is loaded from {act_data_path}")
         else:
             raise ValueError(f"{act_data_path} doesn't exist!")
         
-        mean_act = act_data["mean_act"] # (L, 4d)
-        index = lang_neuron["lang_to_neuron"][lang] # (N, 2)
+        mean_act = act_data["mean_mu_act"].to(self.device) # (L, 4d)
+        index = lang_neuron["lang_to_neuron"][lang].to(self.device) # (N, 2)
         value = mean_act[index[:, 0], index[:, 1]] # (N,)
         intervene_config = {
             "indices": index,
@@ -86,8 +83,7 @@ class Evaluator:
         return float(eval_acc)
     
     def evaluate(self) -> None:
-        lang_set = self.eval_lang.split("_")[0]
-        lang = self.eval_lang.split("_")[1]
+        lang = self.eval_lang
         intervene_config = self._get_intervene_config(intervene_lang=self.eval_lang, is_activate=True)
 
         self.eval_ds = XNLIDatasetHF(model_name=self.model_name, lang=lang, max_context_len=self.config_data["config"]["max_context_length"], frac=self.config["eval_frac"], is_train=False)

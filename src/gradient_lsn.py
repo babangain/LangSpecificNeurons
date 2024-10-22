@@ -13,13 +13,14 @@ import seaborn as sns
 import numpy as np
 from matplotlib_venn import venn3, venn3_circles
 
-class GradientLangNeuron:
-    def __init__(self, device: Union[torch.device, None], model_name: str):
+class GenericLangNeuron:
+    def __init__(self, device: Union[torch.device, None], model_name: str, scoring_method: str):
         self.device = device
         self.model_name = model_name
         self.model_name_srt = self.model_name.split("/")[-1] 
+        self.method = scoring_method
         self.cwd = Path.cwd()
-        self.lang_neuron_path = Path(self.cwd, f"outputs/lang_neurons/{self.model_name_srt}/grad_lang_neuron/lang_neuron_data.pkl")
+        self.lang_neuron_path = Path(self.cwd, f"outputs/lang_neurons/{self.model_name_srt}/{self.method}/lang_neuron_data.pkl")
         self.lang_neuron_path.parent.mkdir(parents=True, exist_ok=True)
         
         if self.lang_neuron_path.exists():
@@ -31,9 +32,9 @@ class GradientLangNeuron:
             print(f"{self.info()}: The lang neurons data is stored at {self.lang_neuron_path}")
     
     def _init_attr(self):
-        self.lang_list = lang_map["set5"]
-        self.lang_neuron_frac = 0.01
-        self.quant_config = QuantoConfig(weights="float8")
+        self.lang_list = lang_map["set1"]
+        self.lang_neuron_frac = 0.0025
+        self.quant_config = None # QuantoConfig(weights="float8")
         self.rel_dict = self._get_neuron_relevance()
         self.L = self.rel_dict[self.lang_list[0]].shape[0]
         self.int_d = self.rel_dict[self.lang_list[0]].shape[1]
@@ -46,9 +47,9 @@ class GradientLangNeuron:
     def _get_neuron_relevance(self) -> dict:
         rel_dict = {}
         for lang in self.lang_list:
-            rel_obj = NeuronRelevance(model_name=self.model_name, device=self.device, lang=lang, quant_config=self.quant_config)
-            rel = rel_obj.get_relevance_data(batch_size=None, data_frac=None).to(self.device) # (L, 4d)
-            rel_dict[lang] = rel
+            rel_obj = NeuronRelevance(model_name=self.model_name, device=self.device, lang=lang, quant_config=self.quant_config, scoring_method=self.method)
+            rel = rel_obj.get_relevance_data(batch_size=None, data_frac=None)
+            rel_dict[lang] = rel["mean_rel"].to(self.device) # (L, 4d)
         return rel_dict      
     
     def _get_lang_to_neuron_map(self) -> dict:
@@ -171,14 +172,15 @@ class GradientLangNeuron:
         plt.clf()
 
 def main(model_name: str, device: torch.device) -> None:
-    lang_neuron = GradientLangNeuron(device=device, model_name=model_name)
-    # lang_neuron.get_lang_specific_neurons_dist(is_plot=True)
-    # lang_neuron.get_layerwise_neurons_dist(is_plot=True)
-    # lang_neuron.get_neurons_overlap(is_plot=True)
-    lang_neuron.plot_3_lang_overlap_venn(languages=["en", "vi", "hi"])
+    methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std"]
+    lang_neuron = GenericLangNeuron(device=device, model_name=model_name, scoring_method=methods[-2])
+    lang_neuron.get_lang_specific_neurons_dist(is_plot=True)
+    lang_neuron.get_layerwise_neurons_dist(is_plot=True)
+    lang_neuron.get_neurons_overlap(is_plot=True)
+    lang_neuron.plot_3_lang_overlap_venn(languages=["en", "vi", "zh"])
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")

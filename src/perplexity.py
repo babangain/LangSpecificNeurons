@@ -1,11 +1,13 @@
-import torch, json, os, sys, tqdm, pickle, datetime, math
+import json, os, sys, tqdm, pickle, datetime, math, random
+os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+import torch
 from pathlib import Path
 sys.path.append(Path(__file__).parent)
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset
 from typing import List, Tuple, Union
 import pandas as pd
-from dataset import WikipediaDataset
+from dataset import WikipediaDatasetHF
 from models import get_tokenizer_and_model
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -58,7 +60,9 @@ class Perplexity:
         inv_lang: where we want to intervene the activation (inv_lang specific neurons), can be None if no intervention is needed
         lang: for which we want to calculate the perplexity score
         """
-        dl = dataset.prepare_dataloader(batch_size=self.batch_size, frac=self.data_frac)
+        ds = Subset(dataset, indices=random.sample(range(len(dataset)), k=int(len(dataset)*self.data_frac)))
+        dl = DataLoader(dataset=ds, batch_size=self.batch_size, drop_last=True, shuffle=True, num_workers=4)
+        
         if inv_lang is None:
             desc = f"Calculating perplexity without intervention for lang: {lang}"
             intervene_config = None
@@ -75,7 +79,7 @@ class Perplexity:
             for input_dict in pbar:
                 out_dict = self.model(input_dict["input_ids"], input_dict["attention_mask"], intervene_config=intervene_config)
                 logits1 = out_dict["logits"] # (b, Tmax, V) 
-                target_ids1 = input_dict["target_ids"][:,:-1] if self.model_name == "aya-101" else input_dict["target_ids"] # (b, Tmax)
+                target_ids1 = input_dict["labels"][:,:-1] if self.model_name == "aya-101" else input_dict["labels"] # (b, Tmax)
                 logits = logits1.flatten(start_dim=0, end_dim=1).to(self.device) # (b*Tmax, V)
                 target_ids = target_ids1.flatten().to(self.device) # (b*Tmax,)
                 loss = torch.nn.functional.cross_entropy(logits, target_ids, reduction="mean") # scalar
@@ -103,7 +107,7 @@ class Perplexity:
         loss_2d_list = []
         
         for src_lang in self.lang_list:
-            src_dataset = WikipediaDataset(model_name=self.full_model_name ,lang=src_lang, max_context_len=self.Tmax) 
+            src_dataset = WikipediaDatasetHF(model_name=self.full_model_name, lang=src_lang, max_context_len=self.Tmax) 
             src_ppx, src_loss = self._calc_ppx_for_lang(dataset=src_dataset, inv_lang=None, lang=src_lang)
             ppx_1d_list.append(src_ppx)
             loss_1d_list.append(src_loss)
@@ -111,7 +115,7 @@ class Perplexity:
             ppx_inv_list = []
             loss_inv_list = []
             for tgt_lang in self.lang_list:
-                tgt_dataset = WikipediaDataset(model_name=self.full_model_name, lang=tgt_lang, max_context_len=self.Tmax)
+                tgt_dataset = WikipediaDatasetHF(model_name=self.full_model_name, lang=tgt_lang, max_context_len=self.Tmax)
                 tgt_ppx, tgt_loss = self._calc_ppx_for_lang(dataset=tgt_dataset, inv_lang=src_lang, lang=tgt_lang)
                 ppx_inv_list.append(tgt_ppx)
                 loss_inv_list.append(tgt_loss)
@@ -132,12 +136,10 @@ class Perplexity:
         change_np = change.numpy()
         plt.figure(figsize=(len(self.lang_list), len(self.lang_list)))
         sns.heatmap(change_np, annot=True, cmap="Reds", fmt=".2f", linewidths=.5, xticklabels=self.lang_list, yticklabels=self.lang_list)
-        plt.xlabel(f'Language - i of Set {self.lang_set[-1]}')
-        plt.ylabel(f'Language - j of Set {self.lang_set[-1]}')
-        tokens = {k: v for k, v in token_repr_map[self.model_name].items() if k in lang_map[self.lang_set]}
-        lang_repr = {k: v for k, v in lang_repr_map[self.model_name].items() if k in lang_map[self.lang_set]}
+        plt.xlabel(f'Language - i of {self.lang_set}')
+        plt.ylabel(f'Language - j of {self.lang_set}')
         ch_type = "PPXC(i,j): Perplexity" if is_ppx else "CELC(i,j): CE Loss"
-        title = f'{self.model_name}: {ch_type} change at language j after intervention at language i\n' + f'Tokens seen (in M): {tokens}\n' + f'Lang repr: {lang_repr}'
+        title = f'{self.model_name}: {ch_type} change at language j after intervention at language i'
             
         plt.title(title, wrap=True)
         plt.xticks(rotation=45, ha='right')
@@ -157,13 +159,10 @@ def main(model_name: str, lang_set: str, device: torch.device) -> None:
     ppx = Perplexity(device=device, tokenizer=tokenizer, model=model, model_name=model_name, ppx_config=ppx_config)
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    for model_key in ["aya101"]:
-        for lang_set in ["set3", "set1", "set2", "set4"]:
-            main(model_name=models_map[model_key], lang_set=lang_set, device=device)
-            print(f"Model: {model_key}, Lang set: {lang_set} done!")
+    methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std"]
+    main(model_name=models_map["llama3"], lang_set=methods[-2], device=device)
     

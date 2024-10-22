@@ -2,22 +2,18 @@
 
 # List of configuration values to iterate over
 CONFIG_PATHS=(
-    "/home/soumen/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI/data_en_frozen_set3_hi_0.25_5.0e-05_r8/master_config.pkl"
-    "/home/soumen/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI/data_en_frozen_set4_hi_0.25_5.0e-05_r8/master_config.pkl"
+    "/raid/speech/soumen/MS_Research/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI/act_abs_std_data_en_frozen_vi_0.25_1.0e-05_r8/master_config.pkl"
 )
 
 CKPT_NAMES=(
     "checkpoint-12268/pytorch_model.bin"
-    "checkpoint-12268/pytorch_model.bin"
 )
 
 EVAL_LANGS=(
-    "set3_hi"
-    "set3_hi"
+    "vi"
 )
 
 IS_ZERO_SHOTS=(
-    1
     1
 )
 
@@ -40,5 +36,5 @@ for i in "${!CONFIG_PATHS[@]}"; do
     echo "Eval Lang: $EVAL_LANG"
     echo "Is zero shot: $IS_ZERO_SHOT"
     
-    nohup python src/task_eval.py > task_eval_set4_${i}.out & 
+    nohup python src/task_eval.py > task_eval_${i}.out & 
 done
