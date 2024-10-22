@@ -183,6 +183,9 @@ class ModelForMLM(torch.nn.Module):
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.quant_config = quant_config
         self.model = AutoModelForCausalLM.from_pretrained(self.model_name, quantization_config=self.quant_config, device_map="auto")
+        self.L = len(self.get_layers())
+        self.d = self.get_target_linear_module(layer_idx=0)[1].in_features
+        self.int_d = self.get_target_linear_module(layer_idx=0)[1].out_features
         self.loss_fn = torch.nn.CrossEntropyLoss(ignore_index=-100)
     
         if self.tokenizer.pad_token is None:
