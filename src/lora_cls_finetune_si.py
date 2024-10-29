@@ -2,7 +2,7 @@ import os, json, pickle
 from pathlib import Path
 import wandb
 wandb.login()
-os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from transformers import AutoTokenizer, TrainingArguments, Trainer, DefaultDataCollator, get_linear_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup, BitsAndBytesConfig, TrainerCallback
 from dataset import XNLIDatasetHF
@@ -78,7 +78,7 @@ class LoRAFineTuner:
             "dataloader_drop_last": True,
             "run_name": self.run_name,
             "report_to": "wandb" if self.config["wandb_log"] else "none",
-            "eval_on_start": True
+            "eval_on_start": False
         }
 
         self.training_args = TrainingArguments(**self.train_arg_config)
@@ -172,7 +172,7 @@ def main(model_name: str, device: torch.device) -> None:
     methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std"]
     config = {
         "model_name": model_name, "task_name": "XNLI",
-        "lang": "en", "method": methods[-1], "frozen_lang": "vi", # "yy" Could be empty string
+        "lang": "en", "method": methods[0], "frozen_lang": "ur", # "yy" Could be empty string
         "num_epochs": 1, "num_steps": None, "batch_size": 8, "max_context_length": 256, # steps are auto calculated
         "train_frac": 0.25, "eval_frac": 1.0,
         "initial_lr": 1e-5, "num_class": 3, "lora_rank": 8, "lora_alpha": 16, "max_grad_norm": 10.0, "weight_decay": 0.1,

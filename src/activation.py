@@ -1,5 +1,5 @@
 import json, os, sys, tqdm, pickle, datetime, random
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import torch
 from pathlib import Path
 sys.path.append(Path(__file__).parent)
@@ -54,7 +54,7 @@ class Activation:
 
 class NeuronRelevance:
     def __init__(self, device: torch.device, model_name: str, quant_config: Union[None, QuantoConfig], lang: str, scoring_method: str):
-        """scoring_method: Any["act_prob_zero", "act_prob_mean", "act_prob_95p", "grad_act", "act_abs_mean", "act_abs_std"]
+        """scoring_method: Any["act_prob_zero", "act_prob_mean", "act_prob_95p", "grad_act", "act_abs_mean", "act_abs_std", "act_prob_cont"]
         """
         self.cwd = Path.cwd()
         self.device = device
@@ -96,7 +96,7 @@ class NeuronRelevance:
                     self.model.train()
                     out = self.model(**input_dict)
                     out["loss"].backward()
-                elif self.method in ["act_abs_mean", "act_abs_std", "act_prob_zero", "act_prob_mean", "act_prob_95p"]:
+                elif self.method in ["act_abs_mean", "act_abs_std", "act_prob_zero", "act_prob_mean", "act_prob_95p", "act_prob_cont"]:
                     self.model.eval()
                     out = self.model(**input_dict)
                 else:
@@ -127,6 +127,9 @@ class NeuronRelevance:
                         rel = torch.abs(act) # (b, T, 4d)
                         theta = rel.std(dim=(0,1)) # (4d,)
                     elif self.method == "act_prob_zero":
+                        rel = (act > 0).to(torch.float16) # (b, T, 4d)
+                        theta = rel.mean(dim=(0,1)) # (4d,)
+                    elif self.method == "act_prob_cont":
                         rel = (act > 0).to(torch.float16) # (b, T, 4d)
                         theta = rel.mean(dim=(0,1)) # (4d,)
                     elif self.method == "act_prob_mean":
@@ -174,10 +177,10 @@ class NeuronRelevance:
 
 def main(model_name: str, device: torch.device) -> None:
     methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std"]
-    for lang in ["id", "ja", "zh"]:
-        for method in ["act_prob_mean"]:
+    for lang in ["ur"]:
+        for method in ["act_prob_zero"]:
             rel = NeuronRelevance(device=device, model_name=model_name, quant_config=None, lang=lang, scoring_method=method)
-            out = rel.get_relevance_data(batch_size=4, data_frac=0.25)
+            out = rel.get_relevance_data(batch_size=4, data_frac=0.5)
             print(out) 
     print("DONE")
     
