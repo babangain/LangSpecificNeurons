@@ -172,7 +172,7 @@ def main(model_name: str, device: torch.device) -> None:
     methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std"]
     config = {
         "model_name": model_name, "task_name": "XNLI",
-        "lang": "en", "method": methods[0], "frozen_lang": "ur", # "yy" Could be empty string
+        "lang": "en", "method": methods[-3], "frozen_lang": "vi", # "yy" Could be empty string
         "num_epochs": 1, "num_steps": None, "batch_size": 8, "max_context_length": 256, # steps are auto calculated
         "train_frac": 0.25, "eval_frac": 1.0,
         "initial_lr": 1e-5, "num_class": 3, "lora_rank": 8, "lora_alpha": 16, "max_grad_norm": 10.0, "weight_decay": 0.1,
