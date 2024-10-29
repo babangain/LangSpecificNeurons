@@ -173,22 +173,14 @@ class GenericLangNeuron:
 
 def main(model_name: str, device: torch.device) -> None:
     methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std"]
-<<<<<<< HEAD
-    lang_neuron = GenericLangNeuron(device=device, model_name=model_name, scoring_method=methods[-2])
-=======
-    lang_neuron = GenericLangNeuron(device=device, model_name=model_name, scoring_method=methods[2])
->>>>>>> 41ceec126d6f5db8c43f58f1d2b7e51c457be658
+    lang_neuron = GenericLangNeuron(device=device, model_name=model_name, scoring_method=methods[-3])
     lang_neuron.get_lang_specific_neurons_dist(is_plot=True)
     lang_neuron.get_layerwise_neurons_dist(is_plot=True)
     lang_neuron.get_neurons_overlap(is_plot=True)
     lang_neuron.plot_3_lang_overlap_venn(languages=["en", "vi", "zh"])
     
 if __name__ == "__main__":
-<<<<<<< HEAD
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
-=======
     os.environ["CUDA_VISIBLE_DEVICES"] = "2"
->>>>>>> 41ceec126d6f5db8c43f58f1d2b7e51c457be658
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")

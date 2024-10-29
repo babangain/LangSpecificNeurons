@@ -2,7 +2,7 @@
 
 # List of configuration values to iterate over
 CONFIG_PATHS=(
-    "/raid/speech/soumen/MS_Research/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI/act_abs_std_data_en_frozen_vi_0.25_1.0e-05_r8/master_config.pkl"
+    "/raid/speech/soumen/MS_Research/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI/act_prob_mean_data_en_frozen_vi_0.25_1.0e-05_r8/master_config.pkl"
 )
 
 CKPT_NAMES=(

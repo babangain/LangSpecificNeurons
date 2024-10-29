@@ -1,5 +1,5 @@
 import wandb, torch, tqdm, sys, os, json, math, gc, pickle
-os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 from pathlib import Path
 sys.path.append(Path(__file__).parent.parent.__str__())
 from typing import List, Tuple, Union, Any
@@ -88,16 +88,7 @@ class Evaluator:
 
         self.eval_ds = XNLIDatasetHF(model_name=self.model_name, lang=lang, max_context_len=self.config_data["config"]["max_context_length"], frac=self.config["eval_frac"], is_train=False)
         self.eval_dl = DataLoader(self.eval_ds, batch_size=self.config["batch_size"], shuffle=False, drop_last=True)
-        
-        if self.config["is_zero_shot"]:
-            acc = self._evaluate_dataloader(intervene_config=None)
-            if self.train_lang == lang:
-                res1 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Direct acc: {acc}"
-            else:
-                res1 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Zero shot acc: {acc}"
-        else:
-            res1 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Zero shot acc: NOT CALCULATED"                
-            
+          
         if self.config["is_zero_shot"]:
             acc = self._evaluate_dataloader(intervene_config=None)
             if self.train_lang == lang:
@@ -112,7 +103,7 @@ class Evaluator:
         res2 = f"[RESULT] Train lang: {self.train_lang}, Frozen lang: {self.frozen_lang}, Eval lang: {self.eval_lang}, Intervene acc: {int_acc}"
         print(res2)
         
-        with open(Path(self.eval_path, f"{self.config['ckpt_name'].split('/')[0]}_train_{self.train_lang}_frozen_{self.frozen_lang}_eval_{self.eval_lang}_result.txt"), "w") as f:
+        with open(Path(self.eval_path, f"{self.config['ckpt_name'].split('/')[0]}_{self.method}_train_{self.train_lang}_frozen_{self.frozen_lang}_eval_{self.eval_lang}_result.txt"), "w") as f:
             f.writelines("\n".join([res1, res2]))
               
 def main(device: torch.device) -> None:
