@@ -108,18 +108,12 @@ class Evaluator:
               
 def main(device: torch.device) -> None:
     config = {
-        "config_path": Path(os.getenv("CONFIG_PATH")),
-        "ckpt_name": os.getenv("CKPT_NAME"),
-        "eval_lang": os.getenv("EVAL_LANG"),
-        "batch_size": int(os.getenv("BATCH_SIZE", 8)),
-        "eval_frac": float(os.getenv("EVAL_FRAC", 1.0)),
-        "is_zero_shot": bool(int(os.getenv("IS_ZERO_SHOT"))),
-        "config_path": Path(os.getenv("CONFIG_PATH")),
-        "ckpt_name": os.getenv("CKPT_NAME"),
-        "eval_lang": os.getenv("EVAL_LANG"),
-        "batch_size": int(os.getenv("BATCH_SIZE", 8)),
-        "eval_frac": float(os.getenv("EVAL_FRAC", 1.0)),
-        "is_zero_shot": bool(int(os.getenv("IS_ZERO_SHOT")))
+        "config_path": Path( "/raid/speech/soumenmondal/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI-SLH/data_en_frozen__0.25_1.0e-05_r8/master_config.pkl"),
+        "ckpt_name": "checkpoint-12268/pytorch_model.bin",
+        "eval_lang": "vi",
+        "batch_size": 8,
+        "eval_frac": 0.1,
+        "is_zero_shot": True,
     }
     evaluator = Evaluator(device=device, config=config)
     evaluator.evaluate()

@@ -221,16 +221,20 @@ class ModelForCLS(torch.nn.Module):
 
         # Multi-layer classification head with ReLU activation
         self.head = torch.nn.Sequential(
-            torch.nn.Linear(self.d, 1024),      
-            torch.nn.ReLU(),
-            torch.nn.Linear(1024, 256),      
-            torch.nn.ReLU(),
-            torch.nn.Linear(256, 64),      
-            torch.nn.ReLU(),
-            torch.nn.Linear(64, 16),      
-            torch.nn.ReLU(),                   
-            torch.nn.Linear(16, self.c)       
+            torch.nn.Linear(self.d, self.c)       
         ).to(self.device)
+        
+        # self.head = torch.nn.Sequential(
+        #     torch.nn.Linear(self.d, 1024),      
+        #     torch.nn.ReLU(),
+        #     torch.nn.Linear(1024, 256),      
+        #     torch.nn.ReLU(),
+        #     torch.nn.Linear(256, 64),      
+        #     torch.nn.ReLU(),
+        #     torch.nn.Linear(64, 16),      
+        #     torch.nn.ReLU(),                   
+        #     torch.nn.Linear(16, self.c)       
+        # ).to(self.device)
     
     def forward(self, input_ids: torch.tensor, attention_mask: torch.tensor, labels: Union[None, torch.tensor]) -> torch.tensor:
         z = self.base(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state # (b, T, d)
@@ -286,19 +290,18 @@ class ModelForCLSWithLoRA(torch.nn.Module):
                     up_proj_lora = LinearWithLoRA(up_proj_linear, rank, alpha, mask_A, mask_B)
                     setattr(target_module, target_linear_name, up_proj_lora)
                     
-                ModelForCLSWithLoRA.replace_linear_with_lora(device=self.device, model=layer, rank=rank, alpha=alpha, name_to_skip="linear")
-        else:
-            ModelForCLSWithLoRA.replace_linear_with_lora(device=self.device, model=self.model.base, rank=rank, alpha=alpha, name_to_skip="")            
+        ModelForCLSWithLoRA.replace_linear_with_lora(device=self.device, model=self.model.base, rank=rank, alpha=alpha)            
 
     @staticmethod
-    def replace_linear_with_lora(device: torch.device, model: torch.nn.Module, rank: int, alpha: float, name_to_skip: str):
+    def replace_linear_with_lora(device: torch.device, model: torch.nn.Module, rank: int, alpha: float):
         for name, module in model.named_children():
-            if isinstance(module, torch.nn.Linear) and name != name_to_skip:
-                mask_A, mask_B = ModelForCLSWithLoRA.create_lora_mask(device=device, d_in=module.in_features, d_out=module.out_features, rank=rank, frozen_neuron_ids=None)
-                linear_lora = LinearWithLoRA(module, rank, alpha, mask_A, mask_B)
-                setattr(model, name, linear_lora) # parent is model, child is module
+            if isinstance(module, torch.nn.Linear):
+                if any(proj in name for proj in ['q_proj', 'k_proj', 'v_proj', 'o_proj']):
+                    mask_A, mask_B = ModelForCLSWithLoRA.create_lora_mask(device=device, d_in=module.in_features, d_out=module.out_features, rank=rank, frozen_neuron_ids=None)
+                    linear_lora = LinearWithLoRA(module, rank, alpha, mask_A, mask_B)
+                    setattr(model, name, linear_lora) # parent is model, child is module
             else:
-                ModelForCLSWithLoRA.replace_linear_with_lora(device, module, rank, alpha, name_to_skip)
+                ModelForCLSWithLoRA.replace_linear_with_lora(device, module, rank, alpha)
     
     @staticmethod
     def create_lora_mask(device: torch.device, d_in: int, d_out: int, rank: int, frozen_neuron_ids: Union[None, torch.tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -393,26 +396,27 @@ class ModelForCLSWithLoRA(torch.nn.Module):
         
 def main(model_name: str, device: torch.device) -> None:
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    # model = ModelForCLSWithLoRA(device=device, tokenizer=tokenizer, model_name=model_name, num_class=3, lora_rank=8, lora_alpha=16, quant_config=None, frozen_neurons=torch.tensor([[0,1], [1,2], [2,3], [2,4], [2,5]])).to(device)
-    model = ModelForMLMWithLoRA(device=device, tokenizer=tokenizer, model_name=model_name, lora_rank=8, lora_alpha=16, quant_config=None, apply_only_mlp=False).to(device)
-    input_ids = torch.randint(low=0, high=100, size=(16, 256)).to(device) # (b, T)
-    labels = torch.cat([input_ids[:, 1:], input_ids[:, 0:1]], dim=-1).to(device) # (b, T)
-    attention_mask = torch.ones(size=(16, 256)).to(device) # (b, T)
+    fn = torch.tensor([[0,1], [0,2], [1,1], [1,2]])
+    model = ModelForCLSWithLoRA(device=device, tokenizer=tokenizer, model_name=model_name, num_class=3, lora_rank=8, lora_alpha=16, quant_config=None, frozen_neurons=fn).to(device)
+    # model = ModelForMLMWithLoRA(device=device, tokenizer=tokenizer, model_name=model_name, lora_rank=8, lora_alpha=16, quant_config=None, apply_only_mlp=False).to(device)
+    # input_ids = torch.randint(low=0, high=100, size=(16, 256)).to(device) # (b, T)
+    # labels = torch.cat([input_ids[:, 1:], input_ids[:, 0:1]], dim=-1).to(device) # (b, T)
+    # attention_mask = torch.ones(size=(16, 256)).to(device) # (b, T)
     print(model)
-    model.calc_num_lora_params()
-    intervene_config = {
-        "indices": torch.tensor([[0,1], [1,2], [2,3], [2,4], [2,5]]),
-        "value": torch.tensor([0, 0, 0, 0, 0])
-    }
-    model.eval()
-    with torch.no_grad():
-        out1 = model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None, labels=labels) # (b, c)
-        out2 = model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=intervene_config, labels=labels) # (b, c)
-    print(out1["pred_labels"].sum(), out1["loss"]) 
-    print(out2["pred_labels"].sum(), out2["loss"])
+    # model.calc_num_lora_params()
+    # intervene_config = {
+    #     "indices": torch.tensor([[0,1], [1,2], [2,3], [2,4], [2,5]]),
+    #     "value": torch.tensor([0, 0, 0, 0, 0])
+    # }
+    # model.eval()
+    # with torch.no_grad():
+    #     out1 = model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=None, labels=labels) # (b, c)
+    #     out2 = model(input_ids=input_ids, attention_mask=attention_mask, intervene_config=intervene_config, labels=labels) # (b, c)
+    # print(out1["pred_labels"].sum(), out1["loss"]) 
+    # print(out2["pred_labels"].sum(), out2["loss"])
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "7"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")

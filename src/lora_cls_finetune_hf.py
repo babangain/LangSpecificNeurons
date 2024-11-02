@@ -2,9 +2,9 @@ import os, json, pickle
 from pathlib import Path
 import wandb
 wandb.login()
-# os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-from transformers import AutoTokenizer, TrainingArguments, Trainer, DefaultDataCollator, get_cosine_with_hard_restarts_schedule_with_warmup, BitsAndBytesConfig, TrainerCallback
+from transformers import AutoTokenizer, TrainingArguments, Trainer, DefaultDataCollator, get_linear_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup, BitsAndBytesConfig, TrainerCallback
 from dataset import XNLIDatasetHF
 from utils import models_map
 from lora_models import ModelForCLSWithLoRA
@@ -47,10 +47,13 @@ class LoRAFineTuner:
             self.model = ModelForCLSWithLoRA(device=self.device, tokenizer=self.tokenizer, model_name=self.model_name, num_class=self.config["num_class"], lora_rank=self.config["lora_rank"], lora_alpha=self.config["lora_alpha"], quant_config=self.quant_config, frozen_neurons=None)
         
         self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.config['initial_lr'], weight_decay=self.config["weight_decay"], betas=self.config["adam_betas"])
-        self.scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(optimizer=self.optimizer, 
-                                                                            num_warmup_steps=int(0.05 * self.num_steps), 
-                                                                            num_training_steps=int(self.num_epochs * self.num_steps), 
-                                                                            num_cycles=self.num_epochs)
+        # self.scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(optimizer=self.optimizer, 
+        #                                                                     num_warmup_steps=int(0.05 * self.num_steps), 
+        #                                                                     num_training_steps=int(self.num_epochs * self.num_steps), 
+        #                                                                     num_cycles=self.num_epochs)
+        self.scheduler = get_linear_schedule_with_warmup(optimizer=self.optimizer,
+                                                         num_warmup_steps=int(0.01 * self.num_steps), 
+                                                         num_training_steps=int(self.num_epochs * self.num_steps))
 
         self.train_arg_config = {
             "output_dir": self.output_dir,
@@ -74,7 +77,7 @@ class LoRAFineTuner:
             "dataloader_drop_last": True,
             "run_name": self.run_name,
             "report_to": "wandb" if self.config["wandb_log"] else "none",
-            "eval_on_start": True
+            "eval_on_start": False
         }
 
         self.training_args = TrainingArguments(**self.train_arg_config)
@@ -166,15 +169,17 @@ class LoRAFineTuner:
 
 def main(model_name: str, device: torch.device) -> None:
     config = {
-        "model_name": model_name, "task_name": "XNLI",
-        "lang": "hi", "frozen_lang": "", # "setX_yy" Could be empty string
+        "model_name": model_name, "task_name": "XNLI-SLH",
+        "lang": "vi", "frozen_lang": "", # "setX_yy" Could be empty string
         "num_epochs": 1, "num_steps": None, "batch_size": 8, "max_context_length": 256, # steps are auto calculated
-        "train_frac": 0.25, "eval_frac": 1.0,
+        "train_frac": 0.25, "eval_frac": 0.1,
         "initial_lr": 1e-5, "num_class": 3, "lora_rank": 8, "lora_alpha": 16, "max_grad_norm": 10.0, "weight_decay": 0.1,
         "adam_betas": (0.95, 0.999), "grad_acc_steps": 1, "num_ckpt_per_epoch": 4, "is_4bit_quant": True, "fp16": False, "bf16": True,
         "wandb_log": True
     }
     trainer = LoRAFineTuner(device=device, config=config)
+    print(trainer.model)
+    trainer.model.calc_num_lora_params()
     trainer.train()
     
 if __name__ == "__main__":

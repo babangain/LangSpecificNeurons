@@ -138,9 +138,6 @@ class NeuronRelevance:
                     elif self.method == "act_prob_zero":
                         rel = (act > 0).to(torch.float16) # (b, T, 4d)
                         theta = rel.mean(dim=(0,1)) # (4d,)
-                    elif self.method == "act_prob_cont":
-                        rel = (act > 0).to(torch.float16) # (b, T, 4d)
-                        theta = rel.mean(dim=(0,1)) # (4d,)
                     elif self.method == "act_prob_mean":
                         rel = (act > mu).to(torch.float16) # (b, T, 4d)
                         theta = rel.mean(dim=(0,1)) # (4d,)
@@ -274,12 +271,18 @@ class NeuronRelevanceByContrastingActivation:
         return mean_theta_dict
         
 def main(model_name: str, device: torch.device) -> None:
-    methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std"]
-    for lang in ["ur"]:
-        for method in ["act_prob_zero"]:
+    methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std", "act_stat"]
+    for lang in ["bn", "mr", "ta", "te", "ml", "kn", "pa"]:
+        for method in ["act_stat"]:
             rel = NeuronRelevance(device=device, model_name=model_name, quant_config=None, lang=lang, scoring_method=method)
-            out = rel.get_relevance_data(batch_size=4, data_frac=0.5)
+            out = rel.get_relevance_data(batch_size=4, data_frac=0.25)
             print(out) 
+    print("DONE")
+    
+    # lang_list = ["en", "vi"]
+    # rel = NeuronRelevanceByContrastingActivation(device=device, model_name=model_name, quant_config=None, lang_list=lang_list, num_iterations=100)
+    # out = rel.get_relevance_data(batch_size=4)
+    # print({i: j.sum() for i,j in out.items()})
     print("DONE")
     
 if __name__ == "__main__":
