@@ -1,5 +1,5 @@
 import json, os, sys, tqdm, pickle, datetime, random
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import torch
 from pathlib import Path
 sys.path.append(Path(__file__).parent)
@@ -271,18 +271,18 @@ class NeuronRelevanceByContrastingActivation:
         return mean_theta_dict
         
 def main(model_name: str, device: torch.device) -> None:
-    # methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std", "act_stat"]
-    # for lang in ["ja"]:
-    #     for method in ["act_stat"]:
-    #         rel = NeuronRelevance(device=device, model_name=model_name, quant_config=None, lang=lang, scoring_method=method)
-    #         out = rel.get_relevance_data(batch_size=4, data_frac=0.01)
-    #         print(out) 
-    # print("DONE")
+    methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std", "act_stat"]
+    for lang in ["en", "vi", "hi", "ur"]:
+        for method in ["act_stat"]:
+            rel = NeuronRelevance(device=device, model_name=model_name, quant_config=None, lang=lang, scoring_method=method)
+            out = rel.get_relevance_data(batch_size=4, data_frac=0.5)
+            print(out) 
+    print("DONE")
     
-    lang_list = ["en", "vi", "hi", "ur"]
-    rel = NeuronRelevanceByContrastingActivation(device=device, model_name=model_name, quant_config=None, lang_list=lang_list, num_iterations=1000)
-    out = rel.get_relevance_data(batch_size=4)
-    print({i: j.sum() for i,j in out.items()})
+    # lang_list = ["en", "vi"]
+    # rel = NeuronRelevanceByContrastingActivation(device=device, model_name=model_name, quant_config=None, lang_list=lang_list, num_iterations=100)
+    # out = rel.get_relevance_data(batch_size=4)
+    # print({i: j.sum() for i,j in out.items()})
     print("DONE")
     
 if __name__ == "__main__":

@@ -3,7 +3,8 @@ lang_map = {
     "set2": ["en", "fr", "vi", "zh", "bn", "hi", "te", "mr"],
     "set3": ["bn", "hi", "ta", "te", "mr", "ur", "kn", "ml", "pa"],
     "set4": ["en", "fr", "es", "vi", "id", "ja", "zh", "bn", "hi", "te"],
-    "set5": ["en", "fr", "es", "vi", "id", "ja", "zh", "bn", "hi", "ta", "te", "mr", "ur", "kn", "ml", "pa"]
+    "set5": ["en", "fr", "es", "vi", "id", "ja", "zh", "bn", "hi", "ta", "te", "mr", "ur", "kn", "ml", "pa"],
+    "set6": ["en", "bn", "hi", "ta", "te", "mr", "ur", "kn", "ml", "pa"]
 }
 
 lang_triplet_map = {
@@ -11,6 +12,7 @@ lang_triplet_map = {
     "set2": [["fr", "vi", "zh"], ["bn", "hi", "mr"], ["bn", "hi", "te"], ["fr", "bn", "te"]],
     "set3": [["bn", "hi", "mr"], ["bn", "hi", "ur"], ["te", "kn", "ml"], ["hi", "pa", "mr"], ["ta", "te", "ml"], ["ta", "ml", "kn"], ["hi", "ta", "te"], ["bn", "te", "pa"]],
     "set4": [["bn", "fr", "ja"], ["fr", "vi", "zh"], ["vi", "te", "es"], ["bn", "hi", "te"], ["en", "hi", "zh"]],
+    "set6": [["bn", "hi", "mr"], ["bn", "hi", "ur"], ["te", "kn", "ml"], ["hi", "pa", "mr"], ["ta", "te", "ml"], ["ta", "ml", "kn"], ["hi", "ta", "te"], ["bn", "te", "pa"]],
 }
 
 models_map = {

@@ -270,12 +270,12 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    # for model_key in ["llama2"]:
-    #     for lang_set in ["set1", "set2", "set3", "set4"]:
-    #         main(model_name=models_map[model_key], lang_set=lang_set, device=device)
-    #         print(f"Model: {model_key}, Lang set: {lang_set} done!")
+    for model_key in ["llama3"]:
+        for lang_set in ["set6"]:
+            main(model_name=models_map[model_key], lang_set=lang_set, device=device)
+            print(f"Model: {model_key}, Lang set: {lang_set} done!")
 
-    for model_name in models_map.keys():
-        for lang in lang_map["set5"]:
-            lang_neuron_overlap_for_diff_lang_set(model_name=model_name, lang=lang)
+    # for model_name in models_map.keys():
+    #     for lang in lang_map["set6"]:
+    #         lang_neuron_overlap_for_diff_lang_set(model_name=model_name, lang=lang)
     
