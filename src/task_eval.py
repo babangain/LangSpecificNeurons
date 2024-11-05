@@ -93,6 +93,7 @@ class Evaluator:
         self.eval_ds = XNLIDatasetHF(model_name=self.model_name, lang=lang, max_context_len=self.config_data["config"]["max_context_length"], frac=self.config["eval_frac"], is_train=False)
         self.eval_dl = DataLoader(self.eval_ds, batch_size=self.config["batch_size"], shuffle=False, drop_last=True)
         
+        
         if self.config["is_zero_shot"]:
             acc = self._evaluate_dataloader(intervene_config=None)
             if self.train_lang == lang:

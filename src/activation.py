@@ -146,6 +146,9 @@ class NeuronRelevance:
                     elif self.method == "act_prob_zero":
                         rel = (act > 0).to(torch.float16) # (b, T, 4d)
                         theta = rel.mean(dim=(0,1)) # (4d,)
+                    elif self.method == "act_prob_cont":
+                        rel = (act > 0).to(torch.float16) # (b, T, 4d)
+                        theta = rel.mean(dim=(0,1)) # (4d,)
                     elif self.method == "act_prob_mean":
                         rel = (act > act_stat_data["mean_mu_act"][layer_idx].to(self.device)).to(torch.float16) # (b, T, 4d)
                         theta = rel.mean(dim=(0,1)) # (4d,)

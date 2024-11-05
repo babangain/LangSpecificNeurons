@@ -1,5 +1,5 @@
 import json, os, sys, tqdm, pickle, datetime, math, random
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import torch
 from pathlib import Path
 sys.path.append(Path(__file__).parent)
@@ -164,5 +164,5 @@ if __name__ == "__main__":
     print(f"Using {device}...")
     
     methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std"]
-    main(model_name=models_map["llama3"], lang_set=methods[-3], device=device)
+    main(model_name=models_map["llama3"], lang_set=methods[1], device=device)
     
