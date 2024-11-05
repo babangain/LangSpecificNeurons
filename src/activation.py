@@ -82,6 +82,13 @@ class NeuronRelevance:
         ds = Subset(self.dataset, indices=random.sample(range(len(self.dataset)), k=int(len(self.dataset)*data_frac)))
         dl = DataLoader(dataset=ds, batch_size=batch_size, drop_last=True, shuffle=True, num_workers=4)
         
+        act_stat_path = Path(Path.cwd(), f"outputs/activation/{self.model_name_srt}/act_stat/rel_{self.lang}.pkl")
+        if act_stat_path.exists():
+            act_stat_data = pickle.load(open(act_stat_path, "rb"))
+            print(f"The activation stat data is loaded from {act_stat_path}")
+        else:
+            raise ValueError(f"{act_stat_path} doesn't exist!")
+        
         mean_rel_tensor = torch.zeros(size=(self.model.L, self.model.int_d)).to(self.device)
         mean_mu_tensor = torch.zeros(size=(self.model.L, self.model.int_d)).to(self.device)
         mean_std_tensor = torch.zeros(size=(self.model.L, self.model.int_d)).to(self.device)
@@ -99,9 +106,10 @@ class NeuronRelevance:
                     self.model.train()
                     out = self.model(**input_dict)
                     out["loss"].backward()
-                elif self.method in ["act_abs_mean", "act_abs_std", "act_prob_zero", "act_prob_mean", "act_prob_95p", "act_stat"]:
+                elif self.method in ["act_abs_mean", "act_abs_std", "act_prob_zero", "act_prob_mean", "act_prob_75p", "act_prob_90p", "act_prob_95p", "act_stat"]:
                     self.model.eval()
-                    out = self.model(**input_dict)
+                    with torch.no_grad():
+                        out = self.model(**input_dict)
                 else:
                     raise ValueError(f"Sorry, invalid method! - {self.method}")
                 
@@ -139,10 +147,16 @@ class NeuronRelevance:
                         rel = (act > 0).to(torch.float16) # (b, T, 4d)
                         theta = rel.mean(dim=(0,1)) # (4d,)
                     elif self.method == "act_prob_mean":
-                        rel = (act > mu).to(torch.float16) # (b, T, 4d)
+                        rel = (act > act_stat_data["mean_mu_act"][layer_idx].to(self.device)).to(torch.float16) # (b, T, 4d)
                         theta = rel.mean(dim=(0,1)) # (4d,)
                     elif self.method == "act_prob_95p":
-                        rel = (act > torch.quantile(act.flatten(0,1).to(torch.float32), q=0.95, dim=0)).to(torch.float16) # (b, T, 4d)
+                        rel = (act > act_stat_data["mean_p95_act"][layer_idx].to(self.device)).to(torch.float16) # (b, T, 4d)
+                        theta = rel.mean(dim=(0,1)) # (4d,)
+                    elif self.method == "act_prob_90p":
+                        rel = (act > act_stat_data["mean_p90_act"][layer_idx].to(self.device)).to(torch.float16) # (b, T, 4d)
+                        theta = rel.mean(dim=(0,1)) # (4d,)
+                    elif self.method == "act_prob_75p":
+                        rel = (act > act_stat_data["mean_p75_act"][layer_idx].to(self.device)).to(torch.float16) # (b, T, 4d)
                         theta = rel.mean(dim=(0,1)) # (4d,)
                     elif self.method == "grad_act":
                         rel = torch.abs(act.grad * act) # (b, T, 4d)
@@ -232,11 +246,15 @@ class NeuronRelevanceByContrastingActivation:
         
         cond_dict = {}
         for lang1 in self.lang_list:
-            lang1_p90 = self.act_stat_data_dict[lang1]["mean_p75_act"].mean(dim=1, keepdim=True).to(self.device)
+            # lang1_p90 = self.act_stat_data_dict[lang1]["mean_p90_act"].mean(dim=1, keepdim=True).to(self.device)
+            # lang1_p90 = self.act_stat_data_dict[lang1]["mean_p75_act"].to(self.device)
+            lang1_p90 = 0
             mu1 = mu_dict[lang1]
             cond = (mu1 > lang1_p90)
             for lang2 in set(self.lang_list) - set(lang1):
-                lang2_p10 = self.act_stat_data_dict[lang2]["mean_p75_act"].mean(dim=1, keepdim=True).to(self.device)
+                # lang2_p10 = self.act_stat_data_dict[lang2]["mean_p10_act"].mean(dim=1, keepdim=True).to(self.device)
+                # lang2_p10 = self.act_stat_data_dict[lang2]["mean_p75_act"].to(self.device)
+                lang2_p10 = 0
                 mu2 = mu_dict[lang2]
                 cond = cond & (mu2 < lang2_p10)
             cond_dict[lang1] = cond.to(torch.float32)       
@@ -254,6 +272,7 @@ class NeuronRelevanceByContrastingActivation:
                 cond_dict = self._get_contrastive_condition(batch_size=batch_size)
                 for lang, cond in cond_dict.items():
                     theta_dict[lang] += cond
+                    pbar.set_postfix({"cond": cond.sum().item()})
         
         mean_theta_dict = {lang: torch.zeros(size=(self.model.L, self.model.int_d)).to(self.device) for lang in self.lang_list}
         for lang, theta in theta_dict.items():
@@ -271,22 +290,20 @@ class NeuronRelevanceByContrastingActivation:
         return mean_theta_dict
         
 def main(model_name: str, device: torch.device) -> None:
-    methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std", "act_stat"]
-    for lang in ["en", "vi", "hi", "ur"]:
-        for method in ["act_stat"]:
-            rel = NeuronRelevance(device=device, model_name=model_name, quant_config=None, lang=lang, scoring_method=method)
-            out = rel.get_relevance_data(batch_size=4, data_frac=0.5)
-            print(out) 
-    print("DONE")
+    # methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std", "act_stat"]
+    # for lang in ["en", "vi", "hi", "ur"]:
+    #     for method in ["act_prob_95p"]:
+    #         rel = NeuronRelevance(device=device, model_name=model_name, quant_config=None, lang=lang, scoring_method=method)
+    #         out = rel.get_relevance_data(batch_size=4, data_frac=0.5)
+    #         print(out) 
+    # print("DONE")
     
-    # lang_list = ["en", "vi"]
-    # rel = NeuronRelevanceByContrastingActivation(device=device, model_name=model_name, quant_config=None, lang_list=lang_list, num_iterations=100)
-    # out = rel.get_relevance_data(batch_size=4)
-    # print({i: j.sum() for i,j in out.items()})
+    rel = NeuronRelevanceByContrastingActivation(device=device, model_name=model_name, quant_config=None, lang_list=["en", "vi"], num_iterations=1000)
+    out = rel.get_relevance_data(batch_size=4)
+    print(out)
     print("DONE")
     
 if __name__ == "__main__":
-    torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     

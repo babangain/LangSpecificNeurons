@@ -219,7 +219,7 @@ class ModelForMLM(torch.nn.Module):
     def create_hook_function(self, name: str):
         def hook_function(module: torch.nn.Module, inputs: torch.Tensor, outputs: torch.Tensor):
             self.activations[name] = outputs # (b, T, 4d)
-            outputs.retain_grad()
+            # outputs.retain_grad()
         return hook_function
 
     def register_hook(self):

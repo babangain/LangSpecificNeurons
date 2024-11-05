@@ -14,7 +14,7 @@ import numpy as np
 from matplotlib_venn import venn3, venn3_circles
 
 class GenericLangNeuron:
-    def __init__(self, device: Union[torch.device, None], model_name: str, scoring_method: str):
+    def __init__(self, device: Union[torch.device, None], model_name: str, lang_list: List[str], scoring_method: str):
         self.device = device
         self.model_name = model_name
         self.model_name_srt = self.model_name.split("/")[-1] 
@@ -27,13 +27,13 @@ class GenericLangNeuron:
             self.__dict__.update(pickle.load(open(self.lang_neuron_path, "rb")))
             print(f"{self.info()}: The lang neurons data is loaded from {self.lang_neuron_path}")
         else:
-            self._init_attr()
+            self._init_attr(lang_list)
             pickle.dump(self.__dict__, open(self.lang_neuron_path, "wb"))
             print(f"{self.info()}: The lang neurons data is stored at {self.lang_neuron_path}")
     
-    def _init_attr(self):
-        self.lang_list = lang_map["set1"]
-        self.lang_neuron_frac = 0.0025
+    def _init_attr(self, lang_list):
+        self.lang_list = lang_list
+        self.lang_neuron_frac = 0.00125
         self.quant_config = None # QuantoConfig(weights="float8")
         self.rel_dict = self._get_neuron_relevance()
         self.L = self.rel_dict[self.lang_list[0]].shape[0]
@@ -172,15 +172,15 @@ class GenericLangNeuron:
         plt.clf()
 
 def main(model_name: str, device: torch.device) -> None:
-    methods = ["act_prob_zero", "act_abs_mean", "grad_act", "act_prob_mean", "act_prob_95p", "act_abs_std"]
-    lang_neuron = GenericLangNeuron(device=device, model_name=model_name, scoring_method=methods[-3])
+    methods = ["act_prob_zero", "act_abs_mean", "act_prob_mean", "act_prob_95p", "act_abs_std"]
+    lang_neuron = GenericLangNeuron(device=device, model_name=model_name, lang_list=["en", "vi", "hi", "ur"], scoring_method="act_prob_90p")
     lang_neuron.get_lang_specific_neurons_dist(is_plot=True)
     lang_neuron.get_layerwise_neurons_dist(is_plot=True)
     lang_neuron.get_neurons_overlap(is_plot=True)
-    lang_neuron.plot_3_lang_overlap_venn(languages=["en", "vi", "zh"])
+    lang_neuron.plot_3_lang_overlap_venn(languages=["en", "vi", "hi"])
     
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")

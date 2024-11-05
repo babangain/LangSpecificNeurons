@@ -2,7 +2,7 @@ import os, json, pickle
 from pathlib import Path
 import wandb
 wandb.login()
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from transformers import AutoTokenizer, TrainingArguments, Trainer, DefaultDataCollator, get_linear_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup, BitsAndBytesConfig, TrainerCallback
 from dataset import XNLIDatasetHF
