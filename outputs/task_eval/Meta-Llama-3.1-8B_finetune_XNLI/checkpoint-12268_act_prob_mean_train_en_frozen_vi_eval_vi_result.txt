@@ -1,2 +1,0 @@
-[RESULT] Train lang: en, Frozen lang: vi, Eval lang: vi, Zero shot acc: 0.8045127987861633
-[RESULT] Train lang: en, Frozen lang: vi, Eval lang: vi, Intervene acc: 0.7571884989738464

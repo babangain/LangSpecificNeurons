@@ -1,2 +1,0 @@
-[RESULT] Train lang: en, Frozen lang: set3_ur, Eval lang: set3_ur, Zero shot acc: 0.7050718665122986
-[RESULT] Train lang: en, Frozen lang: set3_ur, Eval lang: set3_ur, Intervene acc: 0.7040734887123108

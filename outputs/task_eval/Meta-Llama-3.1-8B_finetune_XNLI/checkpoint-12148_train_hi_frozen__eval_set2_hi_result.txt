@@ -1,2 +1,0 @@
-[RESULT] Train lang: hi, Frozen lang: , Eval lang: set2_hi, Direct acc: 0.8043131232261658
-[RESULT] Train lang: hi, Frozen lang: , Eval lang: set2_hi, Intervene acc: 0.8013178706169128

@@ -1,2 +1,0 @@
-[RESULT] Train lang: en, Frozen lang: , Eval lang: set1_vi, Zero shot acc: 0.8067092895507812
-[RESULT] Train lang: en, Frozen lang: , Eval lang: set1_vi, Intervene acc: 0.8073083162307739

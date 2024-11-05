@@ -1,2 +1,0 @@
-[RESULT] Train lang: en, Finetune lang: null, Eval lang: set6_hi, Zero shot acc: 0.7507987022399902
-[RESULT] Train lang: en, Finetune lang: null, Eval lang: set6_hi, Intervene acc: 0.7509983777999878
