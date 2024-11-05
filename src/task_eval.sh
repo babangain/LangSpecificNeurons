@@ -1,39 +1,30 @@
-#!/bin/bash
+# CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_null_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 1 --intervene_by "mean_mu_act" > eval1.out & 
+# CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_en_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 1 --intervene_by "mean_mu_act" > eval2.out & 
+# CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_vi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 1 --intervene_by "mean_mu_act" > eval3.out & 
+# CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_en+vi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 1 --intervene_by "mean_mu_act" > eval4.out & 
 
-# List of configuration values to iterate over
-CONFIG_PATHS=(
-    "/raid/speech/soumenmondal/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI/act_prob_zero_data_en_frozen_ur_0.25_1.0e-05_r8/master_config.pkl"
-)
+# CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_null_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 0 --intervene_by "mean_p75_act" > eval5.out & 
+# CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_en_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 0 --intervene_by "mean_p75_act" > eval6.out & 
+# CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_vi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 0 --intervene_by "mean_p75_act" > eval7.out & 
+# CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_en+vi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 0 --intervene_by "mean_p75_act" > eval8.out & 
 
-CKPT_NAMES=(
-    "checkpoint-12268/pytorch_model.bin"
-)
+# CUDA_VISIBLE_DEVICES=6, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_null_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 0 --intervene_by "mean_p90_act" > eval9.out & 
+# CUDA_VISIBLE_DEVICES=6, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_en_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 0 --intervene_by "mean_p90_act" > eval10.out & 
+# CUDA_VISIBLE_DEVICES=6, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_vi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 0 --intervene_by "mean_p90_act" > eval11.out & 
+# CUDA_VISIBLE_DEVICES=6, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_en+vi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 0 --intervene_by "mean_p90_act" > eval12.out & 
 
-EVAL_LANGS=(
-    "ur"
-)
+# CUDA_VISIBLE_DEVICES=6, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_null_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 0 --intervene_by "mean_p95_act" > eval13.out & 
+# CUDA_VISIBLE_DEVICES=6, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_en_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 0 --intervene_by "mean_p95_act" > eval14.out & 
+# CUDA_VISIBLE_DEVICES=6, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_vi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 0 --intervene_by "mean_p95_act" > eval15.out & 
+# CUDA_VISIBLE_DEVICES=6, nohup python src/task_eval_set.py --ckpt_name "set1_en_finetune_en+vi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "set1_vi" --is_zero_shot 0 --intervene_by "mean_p95_act" > eval16.out & 
 
-IS_ZERO_SHOTS=(
-    1
-)
+CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval.py --ckpt_name "act_prob_90p_en_finetune_hi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "hi" --is_zero_shot 1 --intervene_by "mean_mu_act" > eval1.out & 
+CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval.py --ckpt_name "act_prob_90p_en_finetune_hi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "hi" --is_zero_shot 0 --intervene_by "mean_p75_act" > eval2.out & 
+CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval.py --ckpt_name "act_prob_90p_en_finetune_hi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "hi" --is_zero_shot 0 --intervene_by "mean_p90_act" > eval3.out & 
+CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval.py --ckpt_name "act_prob_90p_en_finetune_hi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "hi" --is_zero_shot 0 --intervene_by "mean_p95_act" > eval4.out & 
 
-BATCH_SIZE=8
-EVAL_FRAC=1.0
+CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval.py --ckpt_name "act_prob_90p_en_finetune_en+hi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "hi" --is_zero_shot 1 --intervene_by "mean_mu_act" > eval5.out & 
+CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval.py --ckpt_name "act_prob_90p_en_finetune_en+hi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "hi" --is_zero_shot 0 --intervene_by "mean_p75_act" > eval6.out & 
+CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval.py --ckpt_name "act_prob_90p_en_finetune_en+hi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "hi" --is_zero_shot 0 --intervene_by "mean_p90_act" > eval7.out & 
+CUDA_VISIBLE_DEVICES=7, nohup python src/task_eval.py --ckpt_name "act_prob_90p_en_finetune_en+hi_0.25_1.0e-05_r8" --ckpt_id "12268" --eval_lang "hi" --is_zero_shot 0 --intervene_by "mean_p95_act" > eval8.out & 
 
-# Loop over different values
-for i in "${!CONFIG_PATHS[@]}"; do
-    export CONFIG_PATH=${CONFIG_PATHS[$i]}
-    export CKPT_NAME=${CKPT_NAMES[$i]}
-    export EVAL_LANG=${EVAL_LANGS[$i]}
-    export BATCH_SIZE=${BATCH_SIZE}
-    export EVAL_FRAC=${EVAL_FRAC}
-    export IS_ZERO_SHOT=${IS_ZERO_SHOTS[$i]}
-    
-    echo "Running evaluation with:"
-    echo "Config Path: $CONFIG_PATH"
-    echo "Checkpoint Name: $CKPT_NAME"
-    echo "Eval Lang: $EVAL_LANG"
-    echo "Is zero shot: $IS_ZERO_SHOT"
-    
-    nohup python src/task_eval.py > task_eval1_${i}.out & 
-done

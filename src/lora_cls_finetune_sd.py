@@ -2,7 +2,7 @@ import os, json, pickle
 from pathlib import Path
 import wandb
 wandb.login()
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from transformers import AutoTokenizer, TrainingArguments, Trainer, DefaultDataCollator, get_linear_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup, BitsAndBytesConfig, TrainerCallback
 from dataset import XNLIDatasetHF
@@ -119,8 +119,8 @@ class LoRAFineTuner:
         # Custom: End.
     
     @staticmethod
-    def _get_frozen_neurons(model_name: str, lang_set: str, finetune_lang: str) -> torch.tensor:
-        lang_neuron_path = Path(Path.cwd(), f"outputs/lang_neurons/{model_name}/{lang_set}/lang_neuron_data.pkl")
+    def _get_frozen_neurons(model_name: str, method: str, finetune_lang: str) -> torch.tensor:
+        lang_neuron_path = Path(Path.cwd(), f"outputs/lang_neurons/{model_name}/{method}/lang_neuron_data.pkl")
         if lang_neuron_path.exists():
             lang_neuron = pickle.load(open(lang_neuron_path, "rb"))
             print(f"The lang neurons data is loaded from {lang_neuron_path}")
@@ -162,7 +162,7 @@ class LoRAFineTuner:
         config = config_data["config"]
         model_name = config["model_name"]
         tokenizer = AutoTokenizer.from_pretrained(model_name)
-        frozen_neurons = LoRAFineTuner._get_frozen_neurons(model_name=model_name.split("/")[-1], finetune_lang=config["finetune_lang"], lang_set=config["lang_set"])
+        frozen_neurons = LoRAFineTuner._get_frozen_neurons(model_name=model_name.split("/")[-1], finetune_lang=config["finetune_lang"], method=config["method"])
         
         model = ModelForCLSWithLoRA(device=device, tokenizer=tokenizer, model_name=model_name, num_class=config["num_class"], lora_rank=config["lora_rank"], lora_alpha=config["lora_alpha"], quant_config=config_data["quant_config"], frozen_neurons=frozen_neurons)
         checkpoint_path = Path(config_path.parent, checkpoint_name)

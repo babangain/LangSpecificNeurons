@@ -1,5 +1,5 @@
-import wandb, torch, tqdm, sys, os, json, math, gc, pickle
-os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+import wandb, torch, tqdm, sys, os, json, math, gc, pickle, argparse
+# os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 from pathlib import Path
 sys.path.append(Path(__file__).parent.parent.__str__())
 from typing import List, Tuple, Union, Any
@@ -25,6 +25,7 @@ class Evaluator:
         self.train_lang = self.config_path.parent.name.split("_")[1]
         self.finetune_lang = self.config_data["config"]["finetune_lang"]
         self.eval_lang = self.config["eval_lang"]
+        self.int_by = self.config["intervene_by"]
         
         self.eval_path = Path(Path.cwd(), f"outputs/task_eval/{self.model_name_srt}_finetune_{self.task_name}")
         if not self.eval_path.exists():
@@ -48,7 +49,7 @@ class Evaluator:
         else:
             raise ValueError(f"{act_data_path} doesn't exist!")
         
-        mean_act = act_data["mean_p95_act"] # (L, 4d)
+        mean_act = act_data[self.int_by] # (L, 4d)
         index = lang_neuron["lang_to_neuron"][lang] # (N, 2)
         value = mean_act[index[:, 0], index[:, 1]] # (N,)
         intervene_config = {
@@ -106,7 +107,7 @@ class Evaluator:
         res2 = f"[RESULT] Train lang: {self.train_lang}, Finetune lang: {self.finetune_lang}, Eval lang: {self.eval_lang}, Intervene acc: {int_acc}"
         print(res2)
         
-        with open(Path(self.eval_path, f"{self.config['ckpt_name'].split('/')[0]}_train_{self.train_lang}_finetune_{self.finetune_lang}_eval_{self.eval_lang}_result.txt"), "w") as f:
+        with open(Path(self.eval_path, f"{self.config['ckpt_name'].split('/')[0]}_train_{self.train_lang}_finetune_{self.finetune_lang}_eval_{self.eval_lang}_{self.int_by}_result.txt"), "w") as f:
             f.writelines("\n".join([res1, res2]))
               
 def main(config: dict, device: torch.device) -> None:
@@ -115,13 +116,22 @@ def main(config: dict, device: torch.device) -> None:
     print("DONE")
     
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Evaluation script for language model")
+    parser.add_argument("--ckpt_name", type=str, required=True, help="Checkpoint name")
+    parser.add_argument("--ckpt_id", type=str, required=True, help="Checkpoint id")
+    parser.add_argument("--eval_lang", type=str, required=True, help="Language for evaluation")
+    parser.add_argument("--is_zero_shot", type=int, required=True, help="Whether the evaluation is zero-shot")
+    parser.add_argument("--intervene_by", type=str, required=True, help="Type of intervention - [mean_p95_act, mean_p90_act, mean_p75_act, mean_mu_act]")
+    args = parser.parse_args()
+    
     config = {
-        "config_path": Path( "/raid/speech/soumenmondal/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI-SLH/set1_en_finetune_en_0.25_1.0e-05_r8/master_config.pkl"),
-        "ckpt_name": "checkpoint-12268/pytorch_model.bin",
-        "eval_lang": "set1_vi",
+        "config_path": Path(f"/raid/speech/soumenmondal/LangSpecificNeurons/outputs/ckpt/Meta-Llama-3.1-8B_finetune_XNLI-SLH/{args.ckpt_name}/master_config.pkl"),
+        "ckpt_name": f"checkpoint-{args.ckpt_id}/pytorch_model.bin",
+        "eval_lang": args.eval_lang,
         "batch_size": 8,
         "eval_frac": 1.0,
-        "is_zero_shot": False,
+        "is_zero_shot": bool(args.is_zero_shot),
+        "intervene_by": args.intervene_by
     }
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
