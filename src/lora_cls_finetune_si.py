@@ -2,7 +2,7 @@ import os, json, pickle
 from pathlib import Path
 import wandb
 wandb.login()
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from transformers import AutoTokenizer, TrainingArguments, Trainer, DefaultDataCollator, get_linear_schedule_with_warmup, get_cosine_with_hard_restarts_schedule_with_warmup, BitsAndBytesConfig, TrainerCallback
 from dataset import XNLIDatasetHF
@@ -27,6 +27,7 @@ class LoRAFineTuner:
         self.lang = config["lang"]
         self.method = config["method"]
         self.finetune_lang = config["finetune_lang"]
+        self.finetune_lang = config["finetune_lang"]
         self.train_ds = XNLIDatasetHF(model_name=self.model_name, lang=self.lang, max_context_len=self.config["max_context_length"], frac=self.config["train_frac"], is_train=True)
         self.eval_ds = XNLIDatasetHF(model_name=self.model_name, lang=self.lang, max_context_len=self.config["max_context_length"], frac=self.config["eval_frac"], is_train=False)
         self.data_collator = DefaultDataCollator(return_tensors="pt")
@@ -39,8 +40,11 @@ class LoRAFineTuner:
         self.project_name = f"{self.model_name.split('/')[-1]}_finetune_{self.config['task_name']}"
         os.environ["WANDB_PROJECT"] = self.project_name
         self.run_name = f"{self.method}_{self.lang}_finetune_{self.finetune_lang}_{self.config['train_frac']:.2f}_{self.config['initial_lr']:.1e}_r{self.config['lora_rank']}"
+        self.run_name = f"{self.method}_{self.lang}_finetune_{self.finetune_lang}_{self.config['train_frac']:.2f}_{self.config['initial_lr']:.1e}_r{self.config['lora_rank']}"
         self.output_dir = f"outputs/ckpt/{self.project_name}/{self.run_name}"
 
+        self.frozen_neurons = self._get_frozen_neurons()
+        self.model = ModelForCLSWithLoRA(device=self.device, tokenizer=self.tokenizer, model_name=self.model_name, num_class=self.config["num_class"], lora_rank=self.config["lora_rank"], lora_alpha=self.config["lora_alpha"], quant_config=self.quant_config, frozen_neurons=self.frozen_neurons)
         self.frozen_neurons = self._get_frozen_neurons()
         self.model = ModelForCLSWithLoRA(device=self.device, tokenizer=self.tokenizer, model_name=self.model_name, num_class=self.config["num_class"], lora_rank=self.config["lora_rank"], lora_alpha=self.config["lora_alpha"], quant_config=self.quant_config, frozen_neurons=self.frozen_neurons)
         self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.config['initial_lr'], weight_decay=self.config["weight_decay"], betas=self.config["adam_betas"])
@@ -143,6 +147,23 @@ class LoRAFineTuner:
         ft_index = ft_index.to(self.device)
         frozen_index = all_neurons[~((all_neurons[:, None] == ft_index).all(-1).any(1))]
         return frozen_index
+        all_neurons = torch.cartesian_prod(torch.arange(lang_neuron["L"]), torch.arange(lang_neuron["int_d"])) # (4Ld, 2)
+        if self.finetune_lang == "null":
+            return None
+        elif "+" in self.finetune_lang:
+            lang1, lang2 = self.finetune_lang.split("+")
+            ft_index1 = lang_neuron["lang_to_neuron"][lang1] # (N, 2)
+            ft_index2 = lang_neuron["lang_to_neuron"][lang2] # (N, 2)
+            ft_index = torch.cat([ft_index1, ft_index2], dim=0)
+        elif len(self.finetune_lang) == 2:
+            ft_index = lang_neuron["lang_to_neuron"][self.finetune_lang] # (N, 2)
+        else:
+            raise ValueError("Invalid finetune lang!")
+        
+        all_neurons = all_neurons.to(self.device)
+        ft_index = ft_index.to(self.device)
+        frozen_index = all_neurons[~((all_neurons[:, None] == ft_index).all(-1).any(1))]
+        return frozen_index
     
     def _save_config(self) -> None: 
         config_data = {
@@ -175,6 +196,8 @@ class LoRAFineTuner:
         self._save_config()
         print(self.model)
         print(self.model.calc_num_lora_params())
+        print(self.model)
+        print(self.model.calc_num_lora_params())
         self.trainer.train(resume_from_checkpoint=False)
 
 def main(model_name: str, device: torch.device) -> None:
@@ -182,6 +205,7 @@ def main(model_name: str, device: torch.device) -> None:
         "model_name": model_name, "task_name": "XNLI-SLH",
         "method": "act_prob_90p", "lang": "en", "finetune_lang": "en+hi", # ["en", "vi", "en+vi", "null"]
         "num_epochs": 1, "num_steps": None, "batch_size": 8, "max_context_length": 256, # steps are auto calculated
+        "train_frac": 0.25, "eval_frac": 0.1,
         "train_frac": 0.25, "eval_frac": 0.1,
         "initial_lr": 1e-5, "num_class": 3, "lora_rank": 8, "lora_alpha": 16, "max_grad_norm": 10.0, "weight_decay": 0.1,
         "adam_betas": (0.95, 0.999), "grad_acc_steps": 1, "num_ckpt_per_epoch": 4, "is_4bit_quant": True, "fp16": False, "bf16": True,

@@ -89,6 +89,13 @@ class NeuronRelevance:
         else:
             raise ValueError(f"{act_stat_path} doesn't exist!")
         
+        act_stat_path = Path(Path.cwd(), f"outputs/activation/{self.model_name_srt}/act_stat/rel_{self.lang}.pkl")
+        if act_stat_path.exists():
+            act_stat_data = pickle.load(open(act_stat_path, "rb"))
+            print(f"The activation stat data is loaded from {act_stat_path}")
+        else:
+            raise ValueError(f"{act_stat_path} doesn't exist!")
+        
         mean_rel_tensor = torch.zeros(size=(self.model.L, self.model.int_d)).to(self.device)
         mean_mu_tensor = torch.zeros(size=(self.model.L, self.model.int_d)).to(self.device)
         mean_std_tensor = torch.zeros(size=(self.model.L, self.model.int_d)).to(self.device)
@@ -107,7 +114,10 @@ class NeuronRelevance:
                     out = self.model(**input_dict)
                     out["loss"].backward()
                 elif self.method in ["act_abs_mean", "act_abs_std", "act_prob_zero", "act_prob_mean", "act_prob_75p", "act_prob_90p", "act_prob_95p", "act_stat"]:
+                elif self.method in ["act_abs_mean", "act_abs_std", "act_prob_zero", "act_prob_mean", "act_prob_75p", "act_prob_90p", "act_prob_95p", "act_stat"]:
                     self.model.eval()
+                    with torch.no_grad():
+                        out = self.model(**input_dict)
                     with torch.no_grad():
                         out = self.model(**input_dict)
                 else:
@@ -148,8 +158,16 @@ class NeuronRelevance:
                         theta = rel.mean(dim=(0,1)) # (4d,)
                     elif self.method == "act_prob_mean":
                         rel = (act > act_stat_data["mean_mu_act"][layer_idx].to(self.device)).to(torch.float16) # (b, T, 4d)
+                        rel = (act > act_stat_data["mean_mu_act"][layer_idx].to(self.device)).to(torch.float16) # (b, T, 4d)
                         theta = rel.mean(dim=(0,1)) # (4d,)
                     elif self.method == "act_prob_95p":
+                        rel = (act > act_stat_data["mean_p95_act"][layer_idx].to(self.device)).to(torch.float16) # (b, T, 4d)
+                        theta = rel.mean(dim=(0,1)) # (4d,)
+                    elif self.method == "act_prob_90p":
+                        rel = (act > act_stat_data["mean_p90_act"][layer_idx].to(self.device)).to(torch.float16) # (b, T, 4d)
+                        theta = rel.mean(dim=(0,1)) # (4d,)
+                    elif self.method == "act_prob_75p":
+                        rel = (act > act_stat_data["mean_p75_act"][layer_idx].to(self.device)).to(torch.float16) # (b, T, 4d)
                         rel = (act > act_stat_data["mean_p95_act"][layer_idx].to(self.device)).to(torch.float16) # (b, T, 4d)
                         theta = rel.mean(dim=(0,1)) # (4d,)
                     elif self.method == "act_prob_90p":
@@ -246,11 +264,15 @@ class NeuronRelevanceByContrastingActivation:
         
         cond_dict = {}
         for lang1 in self.lang_list:
-            lang1_p90 = self.act_stat_data_dict[lang1]["mean_p75_act"].mean(dim=1, keepdim=True).to(self.device)
+            # lang1_p90 = self.act_stat_data_dict[lang1]["mean_p90_act"].mean(dim=1, keepdim=True).to(self.device)
+            # lang1_p90 = self.act_stat_data_dict[lang1]["mean_p75_act"].to(self.device)
+            lang1_p90 = 0
             mu1 = mu_dict[lang1]
             cond = (mu1 > lang1_p90)
             for lang2 in set(self.lang_list) - set(lang1):
-                lang2_p10 = self.act_stat_data_dict[lang2]["mean_p75_act"].mean(dim=1, keepdim=True).to(self.device)
+                # lang2_p10 = self.act_stat_data_dict[lang2]["mean_p10_act"].mean(dim=1, keepdim=True).to(self.device)
+                # lang2_p10 = self.act_stat_data_dict[lang2]["mean_p75_act"].to(self.device)
+                lang2_p10 = 0
                 mu2 = mu_dict[lang2]
                 cond = cond & (mu2 < lang2_p10)
             cond_dict[lang1] = cond.to(torch.float32)       
@@ -268,6 +290,7 @@ class NeuronRelevanceByContrastingActivation:
                 cond_dict = self._get_contrastive_condition(batch_size=batch_size)
                 for lang, cond in cond_dict.items():
                     theta_dict[lang] += cond
+                    pbar.set_postfix({"cond": cond.sum().item()})
         
         mean_theta_dict = {lang: torch.zeros(size=(self.model.L, self.model.int_d)).to(self.device) for lang in self.lang_list}
         for lang, theta in theta_dict.items():

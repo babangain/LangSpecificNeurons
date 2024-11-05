@@ -15,6 +15,7 @@ from matplotlib_venn import venn3, venn3_circles
 
 class GenericLangNeuron:
     def __init__(self, device: Union[torch.device, None], model_name: str, lang_list: List[str], scoring_method: str):
+    def __init__(self, device: Union[torch.device, None], model_name: str, lang_list: List[str], scoring_method: str):
         self.device = device
         self.model_name = model_name
         self.model_name_srt = self.model_name.split("/")[-1] 
@@ -28,9 +29,13 @@ class GenericLangNeuron:
             print(f"{self.info()}: The lang neurons data is loaded from {self.lang_neuron_path}")
         else:
             self._init_attr(lang_list)
+            self._init_attr(lang_list)
             pickle.dump(self.__dict__, open(self.lang_neuron_path, "wb"))
             print(f"{self.info()}: The lang neurons data is stored at {self.lang_neuron_path}")
     
+    def _init_attr(self, lang_list):
+        self.lang_list = lang_list
+        self.lang_neuron_frac = 0.00125
     def _init_attr(self, lang_list):
         self.lang_list = lang_list
         self.lang_neuron_frac = 0.00125
@@ -178,8 +183,10 @@ def main(model_name: str, device: torch.device) -> None:
     lang_neuron.get_layerwise_neurons_dist(is_plot=True)
     lang_neuron.get_neurons_overlap(is_plot=True)
     lang_neuron.plot_3_lang_overlap_venn(languages=["en", "vi", "hi"])
+    lang_neuron.plot_3_lang_overlap_venn(languages=["en", "vi", "hi"])
     
 if __name__ == "__main__":
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
