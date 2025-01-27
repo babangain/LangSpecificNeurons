@@ -49,9 +49,9 @@ class LangNeuron:
         sum_act_prob = 0
         act_prob_dict = {}
         for lang in self.lang_list:
-            rel_obj = NeuronRelevance(model_name=self.model_name, device=self.device, lang=lang, quant_config=self.quant_config, scoring_method="act_prob_zero")
+            rel_obj = NeuronRelevance(model_name=self.model_name, device=self.device, lang=lang, quant_config=self.quant_config, scoring_method="all_act")
             rel = rel_obj.get_relevance_data(batch_size=None, data_frac=None)
-            act_prob_dict[lang] = rel["mean_rel"].to(self.device) # (L, 4d)
+            act_prob_dict[lang] = rel["mean_rel"]["act_prob_zero"].to(self.device) # (L, 4d)
             sum_act_prob += act_prob_dict[lang]
         
         norm_act_prob_dict = {}
@@ -97,9 +97,9 @@ class LangNeuron:
     def _get_set_indep_neurons(self) -> dict:
         rel_dict = {}
         for lang in self.lang_list:
-            rel_obj = NeuronRelevance(model_name=self.model_name, device=self.device, lang=lang, quant_config=self.quant_config, scoring_method=self.method)
+            rel_obj = NeuronRelevance(model_name=self.model_name, device=self.device, lang=lang, quant_config=self.quant_config, scoring_method="all_act")
             rel = rel_obj.get_relevance_data(batch_size=None, data_frac=None)
-            rel_dict[lang] = rel["mean_rel"].to(self.device) # (L, 4d)
+            rel_dict[lang] = rel["mean_rel"][self.method].to(self.device) # (L, 4d)
         
         self.L = rel_dict[self.lang_list[0]].shape[0]
         self.int_d = rel_dict[self.lang_list[0]].shape[1]
@@ -225,14 +225,14 @@ class LangNeuron:
 
 def main(model_name: str, device: torch.device) -> None:
     methods = ["act_prob_zero", "act_abs_mean", "act_prob_mean", "act_prob_95p", "lape/set1"]
-    lang_neuron = LangNeuron(device=device, model_name=model_name, lang_list=lang_map["set1"], scoring_method="act_prob_zero")
+    lang_neuron = LangNeuron(device=device, model_name=model_name, lang_list=["en", "es", "fr", "id", "vi", "zh", "ja"], scoring_method="lape/set1")
     lang_neuron.get_lang_specific_neurons_dist(is_plot=True)
     lang_neuron.get_layerwise_neurons_dist(is_plot=True)
     lang_neuron.get_neurons_overlap(is_plot=True)
-    lang_neuron.plot_3_lang_overlap_venn(languages=["en", "vi", "id"])
+    lang_neuron.plot_3_lang_overlap_venn(languages=["en", "vi", "zh"])
     
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using {device}...")
     
-    main(model_name=models_map["llama3"], device=device)
+    main(model_name=models_map["bloomz"], device=device)

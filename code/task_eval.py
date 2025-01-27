@@ -23,9 +23,7 @@ class Evaluator:
         self.task_name = self.config_data["config"]["task_name"]
         self.train_lang = self.config_data["config"]["lang"]
         self.finetune_lang = self.config_data["config"]["finetune_lang"]
-        self.method = self.config_data["config"]["method"]
-        self.eval_lang = self.config["eval_lang"]
-        self.int_by = self.config["intervene_by"]
+        self.method = self.config["method"] #self.config_data["config"]["method"]
         self.eval_lang = self.config["eval_lang"]
         self.int_by = self.config["intervene_by"]
         
@@ -36,14 +34,14 @@ class Evaluator:
     def _get_intervene_config(self, intervene_lang: str, is_activate: bool) -> dict:
         """intervene_lang = yy"""
         lang = intervene_lang
-        lang_neuron_path = Path(Path.cwd(), f"outputs1/lang_neurons/{self.model_name_srt}/{self.method}/lang_neuron_data.pkl")
+        lang_neuron_path = Path(Path.cwd(), f"outputs/lang_neurons/{self.model_name_srt}/{self.method}/lang_neuron_data.pkl")
         if lang_neuron_path.exists():
             lang_neuron = pickle.load(open(lang_neuron_path, "rb"))
             print(f"The lang neurons data is loaded from {lang_neuron_path}")
         else:
             raise ValueError(f"{lang_neuron_path} doesn't exist!")
 
-        act_data_path = Path(Path.cwd(), f"outputs1/activation/{self.model_name_srt}/act_stat/rel_{lang}.pkl")
+        act_data_path = Path(Path.cwd(), f"outputs/activation/{self.model_name_srt}/act_stat/rel_{lang}.pkl")
         if act_data_path.exists():
             act_data = pickle.load(open(act_data_path, "rb"))
             print(f"The activation data is loaded from {act_data_path}")
@@ -122,6 +120,7 @@ def main(config: dict, device: torch.device) -> None:
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluation script for language model")
+    parser.add_argument("--method", type=str, required=True, help="Method")
     parser.add_argument("--ckpt_path", type=str, required=True, help="Checkpoint path")
     parser.add_argument("--ckpt_id", type=str, required=True, help="Checkpoint id")
     parser.add_argument("--eval_lang", type=str, required=True, help="Language for evaluation")
@@ -131,10 +130,11 @@ if __name__ == "__main__":
     
     config = {
         "config_path": Path(Path.cwd(), f"{args.ckpt_path}/master_config.pkl"),
+        "method": args.method,
         "ckpt_name": f"checkpoint-{args.ckpt_id}/pytorch_model.bin",
         "eval_lang": args.eval_lang,
         "batch_size": 8,
-        "eval_frac": 0.01,
+        "eval_frac": 1.0,
         "is_zero_shot": bool(args.is_zero_shot),
         "intervene_by": args.intervene_by
     }
